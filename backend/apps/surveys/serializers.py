@@ -57,3 +57,20 @@ class SurveySerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         validated_data.pop("id", None)
         return update_survey(instance, **validated_data)
+
+
+class SurveySyncSerializer(SurveySerializer):
+    """Used only by POST /api/surveys/sync/.
+
+    Same field-level validation as SurveySerializer (name, image, lat/lng,
+    accuracy, attributes) reused as-is. Differs only in what "id" means: it's
+    required (sync is always for a client-generated UUID), and an id that
+    already exists is not itself an error — the service layer decides
+    whether that's a same-user retry (update) or a different-user conflict
+    (rejected), which plain create() does not need to handle.
+    """
+
+    id = serializers.UUIDField(required=True)
+
+    def validate_id(self, value):
+        return value

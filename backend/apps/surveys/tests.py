@@ -1,15 +1,17 @@
 import io
 import shutil
 import tempfile
+import threading
 import uuid
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import override_settings
+from django.db import connection
+from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase
 
 from .models import Survey
 
@@ -40,6 +42,7 @@ class SurveyAPITestCase(APITestCase):
         self.user = User.objects.create_user(username="surveyor1", password="pass12345!")
         self.other_user = User.objects.create_user(username="surveyor2", password="pass12345!")
         self.list_url = reverse("survey-list-create")
+        self.sync_url = reverse("survey-sync")
 
     def detail_url(self, pk):
         return reverse("survey-detail", args=[pk])
@@ -358,3 +361,193 @@ class SurveyDetailTests(SurveyAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertFalse(Survey.objects.get(pk=self.survey_id).is_deleted)
+
+
+class SurveySyncTests(SurveyAPITestCase):
+    def test_new_uuid_creates_survey(self):
+        self.client.force_authenticate(self.user)
+        client_id = str(uuid.uuid4())
+
+        response = self.client.post(
+            self.sync_url, self.valid_payload(id=client_id), format="multipart"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["id"], client_id)
+        self.assertTrue(response.data["created"])
+        self.assertEqual(Survey.objects.filter(pk=client_id).count(), 1)
+
+    def test_sync_requires_client_supplied_id(self):
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(self.sync_url, self.valid_payload(), format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("id", response.data)
+
+    def test_synced_survey_is_owned_by_authenticated_user(self):
+        self.client.force_authenticate(self.user)
+        client_id = str(uuid.uuid4())
+
+        self.client.post(self.sync_url, self.valid_payload(id=client_id), format="multipart")
+
+        self.assertEqual(Survey.objects.get(pk=client_id).user, self.user)
+
+    def test_repeating_same_sync_does_not_create_duplicate(self):
+        self.client.force_authenticate(self.user)
+        client_id = str(uuid.uuid4())
+        payload = self.valid_payload(id=client_id)
+
+        first = self.client.post(self.sync_url, payload, format="multipart")
+        second = self.client.post(
+            self.sync_url, self.valid_payload(id=client_id), format="multipart"
+        )
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertFalse(second.data["created"])
+        self.assertEqual(Survey.objects.filter(pk=client_id).count(), 1)
+
+    def test_repeated_sync_updates_same_record(self):
+        self.client.force_authenticate(self.user)
+        client_id = str(uuid.uuid4())
+        self.client.post(
+            self.sync_url, self.valid_payload(id=client_id, name="First Name"), format="multipart"
+        )
+
+        response = self.client.post(
+            self.sync_url,
+            self.valid_payload(id=client_id, name="Resynced Name"),
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["id"], client_id)
+        self.assertEqual(Survey.objects.get(pk=client_id).name, "Resynced Name")
+
+    def test_sync_of_another_users_uuid_is_rejected(self):
+        self.client.force_authenticate(self.other_user)
+        client_id = str(uuid.uuid4())
+        self.client.post(self.sync_url, self.valid_payload(id=client_id), format="multipart")
+
+        self.client.force_authenticate(self.user)
+        response = self.client.post(
+            self.sync_url,
+            self.valid_payload(id=client_id, name="Hijack attempt"),
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        survey = Survey.objects.get(pk=client_id)
+        self.assertEqual(survey.user, self.other_user)
+        self.assertNotEqual(survey.name, "Hijack attempt")
+
+    def test_sync_image_is_stored(self):
+        self.client.force_authenticate(self.user)
+        client_id = str(uuid.uuid4())
+
+        response = self.client.post(
+            self.sync_url, self.valid_payload(id=client_id), format="multipart"
+        )
+
+        survey = Survey.objects.get(pk=client_id)
+        self.assertTrue(survey.image.name)
+        self.assertTrue(survey.image.storage.exists(survey.image.name))
+
+    def test_sync_invalid_image_is_rejected(self):
+        self.client.force_authenticate(self.user)
+        bogus_file = SimpleUploadedFile(
+            "not-an-image.jpg", b"this is not image data", content_type="image/jpeg"
+        )
+
+        response = self.client.post(
+            self.sync_url,
+            self.valid_payload(id=str(uuid.uuid4()), image=bogus_file),
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("image", response.data)
+
+    def test_sync_invalid_coordinates_are_rejected(self):
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            self.sync_url,
+            self.valid_payload(id=str(uuid.uuid4()), latitude=200),
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("latitude", response.data)
+
+    def test_sync_invalid_attributes_are_rejected(self):
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            self.sync_url,
+            self.valid_payload(id=str(uuid.uuid4()), attributes='{"Height": 12}'),
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("attributes", response.data)
+
+    def test_sync_requires_authentication(self):
+        response = self.client.post(
+            self.sync_url, self.valid_payload(id=str(uuid.uuid4())), format="multipart"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+@override_settings(MEDIA_ROOT=_TEST_MEDIA_ROOT)
+class SurveySyncConcurrencyTests(TransactionTestCase):
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(_TEST_MEDIA_ROOT, ignore_errors=True)
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="surveyor1", password="pass12345!")
+        self.sync_url = reverse("survey-sync")
+
+    def test_concurrent_sync_requests_for_same_uuid_do_not_duplicate(self):
+        client_id = str(uuid.uuid4())
+        status_codes = []
+        errors = []
+
+        def do_sync():
+            try:
+                client = APIClient()
+                client.force_authenticate(self.user)
+                response = client.post(
+                    self.sync_url,
+                    {
+                        "id": client_id,
+                        "name": "Concurrent Pole",
+                        "description": "",
+                        "latitude": 33.6844,
+                        "longitude": 73.0479,
+                        "accuracy": 5.0,
+                        "attributes": "{}",
+                        "image": make_image_file(),
+                    },
+                    format="multipart",
+                )
+                status_codes.append(response.status_code)
+            except Exception as exc:  # pragma: no cover - surfaced via errors list
+                errors.append(exc)
+            finally:
+                connection.close()
+
+        threads = [threading.Thread(target=do_sync) for _ in range(6)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(Survey.objects.filter(pk=client_id).count(), 1)
+        self.assertEqual(status_codes.count(status.HTTP_201_CREATED), 1)
+        self.assertEqual(status_codes.count(status.HTTP_200_OK), 5)
