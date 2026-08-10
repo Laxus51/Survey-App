@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     # Third-party
     "rest_framework",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     # Local apps
     "apps.authentication",
@@ -181,6 +182,9 @@ SIMPLE_JWT = {
         days=int(os.environ.get("JWT_REFRESH_TOKEN_LIFETIME_DAYS", 7))
     ),
     "ROTATE_REFRESH_TOKENS": True,
+    # Paired with ROTATE_REFRESH_TOKENS: without this, an old refresh token
+    # remains valid after being rotated, which defeats the point of rotation.
+    "BLACKLIST_AFTER_ROTATION": True,
 }
 
 
