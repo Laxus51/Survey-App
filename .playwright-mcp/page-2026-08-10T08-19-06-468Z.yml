@@ -1,7 +1,0 @@
-- generic [ref=f1e53]:
-  - heading "Survey App" [level=1] [ref=f1e54]
-  - generic [ref=f1e55]: Username
-  - textbox "Username" [ref=f1e56]
-  - generic [ref=f1e57]: Password
-  - textbox "Password" [ref=f1e58]
-  - button "Sign in" [ref=f1e59] [cursor=pointer]
