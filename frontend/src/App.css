@@ -199,3 +199,96 @@
 .attribute-row {
   display: contents;
 }
+
+/* Survey capture */
+
+.field {
+  margin: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.capture-field {
+  margin: 16px 0;
+}
+
+.capture-button {
+  width: 100%;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border: none;
+  font-weight: 600;
+}
+
+.image-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.image-preview img {
+  width: 100%;
+  max-width: 480px;
+  border-radius: 8px;
+  display: block;
+}
+
+.location-status {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+}
+
+.attributes-editor {
+  margin: 20px 0;
+}
+
+.attribute-row-editor {
+  margin-bottom: 8px;
+}
+
+.attribute-row-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.form-error-list {
+  color: var(--danger);
+  font-size: 0.9rem;
+  margin: 12px 0;
+  padding-left: 20px;
+}
+
+.button-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.button-row button,
+.button-row a {
+  min-width: 140px;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .attribute-row-inputs {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .attribute-row-inputs button {
+    grid-column: span 2;
+  }
+}

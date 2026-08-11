@@ -68,9 +68,27 @@ button {
 }
 
 input,
+textarea,
 button {
   border-radius: 6px;
   border: 1px solid var(--border);
+  font: inherit;
+}
+
+/* Minimum comfortable touch target on phones. */
+button {
+  min-height: 44px;
+  padding: 8px 14px;
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+input,
+textarea {
+  padding: 10px 12px;
+  background: var(--bg);
+  color: var(--text-h);
+  width: 100%;
 }
 
 .muted {

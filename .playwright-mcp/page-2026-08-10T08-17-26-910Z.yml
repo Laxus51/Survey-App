@@ -1,8 +1,0 @@
-- generic [ref=e4]:
-  - heading "Survey App" [level=1] [ref=e5]
-  - generic [ref=e6]: Username
-  - textbox "Username" [ref=e7]: frontendtest
-  - generic [ref=e8]: Password
-  - textbox "Password" [ref=e9]: wrong-password
-  - alert [ref=e11]: Invalid username or password.
-  - button "Sign in" [ref=e10] [cursor=pointer]
