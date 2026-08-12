@@ -12,6 +12,19 @@
   margin-bottom: 16px;
 }
 
+.page section {
+  margin-top: 28px;
+}
+
+.quota-warning {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fdf0c8;
+  color: #7a5b00;
+  font-size: 0.9rem;
+}
+
 .page-header-actions {
   display: flex;
   align-items: center;

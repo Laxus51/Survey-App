@@ -4,7 +4,8 @@ import { CustomAttributesEditor } from "../components/survey-capture/CustomAttri
 import { ImageCapture } from "../components/survey-capture/ImageCapture";
 import { SurveyReview } from "../components/survey-capture/SurveyReview";
 import { useGeolocationCapture } from "../hooks/useGeolocationCapture";
-import { surveyPersistence } from "../services/surveyPersistence";
+import { useStorageQuota } from "../hooks/useStorageQuota";
+import { SurveyPersistenceError, surveyPersistence } from "../services/surveyPersistence";
 import type { LocalSurvey } from "../types/localSurvey";
 import type { AttributeRow } from "../utils/attributeRows";
 import { attributeRowsAreValid, attributeRowsToRecord } from "../utils/attributeRows";
@@ -24,6 +25,7 @@ export function NewSurveyPage() {
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const storageQuota = useStorageQuota();
 
   const attributes = useMemo(() => attributeRowsToRecord(attributeRows), [attributeRows]);
 
@@ -85,8 +87,10 @@ export function NewSurveyPage() {
       };
       await surveyPersistence.saveSurvey(localSurvey);
       setMode("saved");
-    } catch {
-      setSaveError("Could not save the survey. Please try again.");
+    } catch (error) {
+      setSaveError(
+        error instanceof SurveyPersistenceError ? error.message : "Could not save the survey. Please try again.",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -109,10 +113,7 @@ export function NewSurveyPage() {
     return (
       <div className="page">
         <h1>Survey saved</h1>
-        <p>
-          Your survey was saved on this device. It will sync once the offline persistence and connection layer are
-          implemented in a later phase.
-        </p>
+        <p>Your survey was saved on this device and is pending synchronization.</p>
         <div className="button-row">
           <button type="button" onClick={handleStartNewSurvey}>
             Add another survey
@@ -153,10 +154,28 @@ export function NewSurveyPage() {
     );
   }
 
+  if (storageQuota.status === "blocked") {
+    return (
+      <div className="page">
+        <Link to="/">&larr; Back to dashboard</Link>
+        <h1>New Survey</h1>
+        <p className="form-error" role="alert">
+          Local storage on this device is nearly full. Sync or free up space before capturing new surveys.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="page">
       <Link to="/">&larr; Back to dashboard</Link>
       <h1>New Survey</h1>
+
+      {storageQuota.status === "warning" && (
+        <p className="quota-warning" role="alert">
+          Local storage on this device is getting full. Sync existing surveys soon to free up space.
+        </p>
+      )}
 
       <ImageCapture
         previewUrl={imagePreviewUrl}
