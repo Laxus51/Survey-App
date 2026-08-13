@@ -11,6 +11,12 @@ export default defineConfig({
     // background sync, and the IndexedDB-backed sync engine are later phases.
     VitePWA({
       registerType: 'autoUpdate',
+      // We register the generated service worker ourselves via the
+      // `virtual:pwa-register` module (src/registerServiceWorker.ts) so
+      // registration is explicit, typed application code rather than an
+      // opaque auto-injected <script> tag - this is vite-plugin-pwa's own
+      // recommended "official virtual registration" approach.
+      injectRegister: false,
       manifest: {
         name: 'Survey App',
         short_name: 'Survey App',
