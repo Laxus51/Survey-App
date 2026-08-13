@@ -71,6 +71,14 @@ class AuthenticationTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_refresh_for_deleted_user_returns_401_not_500(self):
+        tokens = self._login()
+        self.user.delete()
+
+        response = self.client.post(self.refresh_url, {"refresh": tokens["refresh"]})
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
     def test_logout_blacklists_refresh_token(self):
         tokens = self._login()
 

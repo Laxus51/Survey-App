@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { CustomAttributesEditor } from "../components/survey-capture/CustomAttributesEditor";
@@ -31,6 +31,18 @@ export function NewSurveyPage() {
   const storageQuota = useStorageQuota();
 
   const attributes = useMemo(() => attributeRowsToRecord(attributeRows), [attributeRows]);
+
+  const imagePreviewUrlRef = useRef<string | null>(null);
+  imagePreviewUrlRef.current = imagePreviewUrl;
+
+  // Guards against a leaked object URL if the surveyor captures a photo and
+  // then navigates away (e.g. "Back to dashboard") without saving, retaking,
+  // or starting a new survey - those paths already revoke it themselves.
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrlRef.current) URL.revokeObjectURL(imagePreviewUrlRef.current);
+    };
+  }, []);
 
   function handleImageCaptured(blob: Blob, previewUrl: string) {
     setImageBlob(blob);

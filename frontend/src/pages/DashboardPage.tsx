@@ -100,6 +100,12 @@ export function DashboardPage() {
         + New Survey
       </Link>
 
+      {isLoadingLocal && (
+        <section>
+          <h2>Pending Sync</h2>
+          <p>Loading…</p>
+        </section>
+      )}
       {!isLoadingLocal && !localError && localSurveys.length > 0 && (
         <section>
           <h2>Pending Sync</h2>

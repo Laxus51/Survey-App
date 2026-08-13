@@ -134,3 +134,20 @@ describe("NewSurveyPage - save triggers sync", () => {
     expect(await surveyPersistence.listSurveys()).toHaveLength(0);
   });
 });
+
+describe("NewSurveyPage - image preview URL cleanup", () => {
+  it("revokes the captured photo's object URL if the page unmounts without saving", () => {
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <NewSurveyPage />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByText("Fake Capture"));
+
+    unmount();
+
+    expect(revokeSpy).toHaveBeenCalledWith("blob:fake-preview");
+  });
+});

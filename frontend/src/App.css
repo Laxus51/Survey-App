@@ -145,6 +145,7 @@
 
 .survey-card-body {
   padding: 10px 12px;
+  overflow-wrap: break-word;
 }
 
 .survey-card-body h2 {

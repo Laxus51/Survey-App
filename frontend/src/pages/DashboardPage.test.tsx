@@ -113,6 +113,30 @@ describe("DashboardPage", () => {
     expect(screen.queryByText("Pending Sync")).not.toBeInTheDocument();
   });
 
+  it("shows a loading indicator in Pending Sync while local surveys are being read", async () => {
+    let resolveList: ((records: Awaited<ReturnType<typeof surveyPersistence.listSurveys>>) => void) | undefined;
+    const listSpy = vi.spyOn(surveyPersistence, "listSurveys").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveList = resolve;
+        }),
+    );
+
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("Pending Sync");
+    expect(screen.getAllByText("Loading…").length).toBeGreaterThan(0);
+
+    resolveList?.([]);
+    await waitFor(() => expect(screen.queryByText("Pending Sync")).not.toBeInTheDocument());
+
+    listSpy.mockRestore();
+  });
+
   it("shows the syncing state live while a sync attempt is in progress", async () => {
     const survey = makeLocalSurvey({ name: "Mid Sync Pole" });
     await surveyPersistence.saveSurvey(survey);
