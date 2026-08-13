@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
 import { CustomAttributesEditor } from "../components/survey-capture/CustomAttributesEditor";
 import { ImageCapture } from "../components/survey-capture/ImageCapture";
 import { SurveyReview } from "../components/survey-capture/SurveyReview";
 import { useGeolocationCapture } from "../hooks/useGeolocationCapture";
 import { useStorageQuota } from "../hooks/useStorageQuota";
 import { SurveyPersistenceError, surveyPersistence } from "../services/surveyPersistence";
+import { runSync } from "../services/syncEngine";
 import type { LocalSurvey } from "../types/localSurvey";
 import type { AttributeRow } from "../utils/attributeRows";
 import { attributeRowsAreValid, attributeRowsToRecord } from "../utils/attributeRows";
@@ -14,6 +16,7 @@ import { generateUuid } from "../utils/uuid";
 type Mode = "edit" | "review" | "saved";
 
 export function NewSurveyPage() {
+  const { isAuthenticated } = useAuth();
   const [surveyId, setSurveyId] = useState(() => generateUuid());
   const [imageBlob, setImageBlob] = useState<Blob | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
@@ -86,6 +89,15 @@ export function NewSurveyPage() {
         updatedAt: now,
       };
       await surveyPersistence.saveSurvey(localSurvey);
+      // The survey is already durably in IndexedDB by this point - this is
+      // just an opportunistic nudge to the existing sync engine, not part
+      // of the save transaction. Fire-and-forget (not awaited): if it's
+      // offline or unauthenticated, or fails for any reason, the survey
+      // stays correctly "pending" and the existing app-start/online-event/
+      // manual-retry triggers still cover it later.
+      if (navigator.onLine && isAuthenticated) {
+        void runSync();
+      }
       setMode("saved");
     } catch (error) {
       setSaveError(

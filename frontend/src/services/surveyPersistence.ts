@@ -1,6 +1,6 @@
 import type { LocalSurvey } from "../types/localSurvey";
 import type { LocalSurveyRecord } from "../types/localSurveyRecord";
-import { openDatabase, runInTransaction } from "./indexedDbClient";
+import { openDatabase, runInTransaction, SYNC_STATUS_INDEX } from "./indexedDbClient";
 
 export type SurveyPersistenceErrorCode = "quota_exceeded" | "unavailable" | "unknown";
 
@@ -15,14 +15,18 @@ export class SurveyPersistenceError extends Error {
 }
 
 // The capture UI depends on this interface, not on IndexedDB directly.
-// Only save/get/list are implemented: what this phase's Dashboard/Details
-// integration actually calls. Sync-state mutation and deletion are left for
-// the sync-engine phase to add once its actual needs are known, rather than
-// guessing at their shape now.
+// listPendingSync/updateSyncState are what the sync engine (Phase 6B) needs;
+// deletion still isn't added since nothing calls it yet - synced records are
+// deliberately retained locally (see updateSyncState's docs below).
 export interface SurveyPersistence {
   saveSurvey(survey: LocalSurvey): Promise<void>;
   getSurvey(id: string): Promise<LocalSurveyRecord | undefined>;
   listSurveys(): Promise<LocalSurveyRecord[]>;
+  listPendingSync(): Promise<LocalSurveyRecord[]>;
+  updateSyncState(
+    id: string,
+    patch: Partial<Pick<LocalSurveyRecord, "syncStatus" | "retryCount">>,
+  ): Promise<void>;
 }
 
 export function toPersistenceError(error: unknown): SurveyPersistenceError {
@@ -74,6 +78,52 @@ class IndexedDBSurveyPersistence implements SurveyPersistence {
       const db = await openDatabase();
       const records = await runInTransaction<LocalSurveyRecord[]>(db, "readonly", (store) => store.getAll());
       return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    } catch (error) {
+      throw toPersistenceError(error);
+    }
+  }
+
+  async listPendingSync(): Promise<LocalSurveyRecord[]> {
+    try {
+      const db = await openDatabase();
+      // Two index lookups rather than a full-store scan + JS filter - this
+      // is exactly what the syncStatus index (added in Phase 6A ahead of
+      // this need) is for.
+      const [pending, failed] = await Promise.all([
+        runInTransaction<LocalSurveyRecord[]>(db, "readonly", (store) =>
+          store.index(SYNC_STATUS_INDEX).getAll("pending"),
+        ),
+        runInTransaction<LocalSurveyRecord[]>(db, "readonly", (store) =>
+          store.index(SYNC_STATUS_INDEX).getAll("failed"),
+        ),
+      ]);
+      return [...pending, ...failed].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    } catch (error) {
+      throw toPersistenceError(error);
+    }
+  }
+
+  // Reads the existing record and writes back only the requested fields
+  // changed, so the survey's data/image are always preserved untouched.
+  // The get-then-put isn't wrapped in one atomic transaction (two sequential
+  // transactions instead) - acceptable given the sync engine's own in-flight
+  // lock means only one queue processor ever mutates records at a time, and
+  // the capture UI only ever creates new records, never mutates existing
+  // ones outside this method.
+  async updateSyncState(
+    id: string,
+    patch: Partial<Pick<LocalSurveyRecord, "syncStatus" | "retryCount">>,
+  ): Promise<void> {
+    try {
+      const db = await openDatabase();
+      const existing = await runInTransaction<LocalSurveyRecord | undefined>(db, "readonly", (store) =>
+        store.get(id),
+      );
+      if (!existing) {
+        throw new SurveyPersistenceError("unknown", `No local survey found with id ${id}.`);
+      }
+      const updated: LocalSurveyRecord = { ...existing, ...patch };
+      await runInTransaction(db, "readwrite", (store) => store.put(updated));
     } catch (error) {
       throw toPersistenceError(error);
     }

@@ -16,9 +16,9 @@ function describeGeolocationError(error: GeolocationPositionError): string {
     case error.PERMISSION_DENIED:
       return "Location permission was denied. Enable location access for this site and try again.";
     case error.POSITION_UNAVAILABLE:
-      return "Your device could not determine its current location.";
+      return "Your device could not determine its current location. This can happen regardless of internet connectivity - try again, or try a different spot.";
     case error.TIMEOUT:
-      return "Getting your location took too long. Try again where you have a clearer signal.";
+      return "Getting your location took too long. This can happen regardless of internet connectivity - try again, or try a different spot.";
     default:
       return "Could not get your location.";
   }

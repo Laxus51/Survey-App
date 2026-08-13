@@ -5,6 +5,7 @@ import { LocalSurveyCard } from "../components/LocalSurveyCard";
 import { ApiError } from "../services/httpClient";
 import * as surveyApi from "../services/surveyApi";
 import { surveyPersistence } from "../services/surveyPersistence";
+import { runSync, subscribe as subscribeToSyncEngine } from "../services/syncEngine";
 import type { LocalSurveyRecord } from "../types/localSurveyRecord";
 import type { Survey } from "../types/survey";
 
@@ -12,12 +13,12 @@ export function DashboardPage() {
   const { user, logout } = useAuth();
 
   // Local (IndexedDB) and server surveys are loaded and displayed as two
-  // separate sections rather than merged into one list: today a local
-  // record can only ever be "pending" (no sync engine exists yet to move it
-  // further), so there's no overlap to reconcile. The syncStatus !== "synced"
-  // filter below is what keeps that true once a sync engine exists - a
-  // locally-known-synced record is already covered by the server section,
-  // so it's excluded here rather than shown twice.
+  // separate sections rather than merged into one list. Now that the sync
+  // engine can actually move a local record to "synced", the
+  // syncStatus !== "synced" filter below is what keeps it from appearing in
+  // both sections at once - a locally-known-synced record is already
+  // covered by the server section, so it's excluded here rather than shown
+  // twice.
   const [localSurveys, setLocalSurveys] = useState<LocalSurveyRecord[]>([]);
   const [localError, setLocalError] = useState<string | null>(null);
   const [isLoadingLocal, setIsLoadingLocal] = useState(true);
@@ -67,6 +68,22 @@ export function DashboardPage() {
     void loadSurveys(page);
   }, [page, loadSurveys]);
 
+  // The sync engine notifies after each record it processes settles
+  // (syncing -> synced/failed/reverted). Refreshing both lists here is what
+  // makes a newly-synced survey move from Pending Sync into Synced Surveys
+  // without a manual page reload, and keeps status badges (syncing/failed,
+  // retry count) live during a run.
+  useEffect(() => {
+    return subscribeToSyncEngine(() => {
+      void loadLocalSurveys();
+      void loadSurveys(page);
+    });
+  }, [loadLocalSurveys, loadSurveys, page]);
+
+  function handleRetry() {
+    void runSync();
+  }
+
   return (
     <div className="page">
       <header className="page-header">
@@ -88,7 +105,7 @@ export function DashboardPage() {
           <h2>Pending Sync</h2>
           <div className="survey-grid">
             {localSurveys.map((record) => (
-              <LocalSurveyCard record={record} key={record.id} />
+              <LocalSurveyCard record={record} key={record.id} onRetry={handleRetry} />
             ))}
           </div>
         </section>

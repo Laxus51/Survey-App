@@ -121,6 +121,20 @@
   background: var(--bg-subtle);
 }
 
+.survey-card-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.survey-card-footer {
+  padding: 0 12px 12px;
+}
+
+.survey-card-footer button {
+  width: 100%;
+}
+
 .survey-card img {
   width: 100%;
   aspect-ratio: 4 / 3;

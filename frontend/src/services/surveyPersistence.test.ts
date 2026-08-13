@@ -185,4 +185,95 @@ describe("IndexedDBSurveyPersistence", () => {
     expect(mapped.code).toBe("quota_exceeded");
     expect(mapped.message).toMatch(/storage space/i);
   });
+
+  it("transitions pending -> syncing -> synced, resetting retryCount to 0", async () => {
+    const { surveyPersistence } = await freshPersistence();
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+
+    await surveyPersistence.updateSyncState(survey.id, { syncStatus: "syncing" });
+    expect((await surveyPersistence.getSurvey(survey.id))!.syncStatus).toBe("syncing");
+
+    await surveyPersistence.updateSyncState(survey.id, { syncStatus: "synced", retryCount: 0 });
+    const record = await surveyPersistence.getSurvey(survey.id);
+
+    expect(record!.syncStatus).toBe("synced");
+    expect(record!.retryCount).toBe(0);
+  });
+
+  it("transitions pending -> failed and increments retryCount", async () => {
+    const { surveyPersistence } = await freshPersistence();
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+
+    await surveyPersistence.updateSyncState(survey.id, { syncStatus: "failed", retryCount: 1 });
+    const record = await surveyPersistence.getSurvey(survey.id);
+
+    expect(record!.syncStatus).toBe("failed");
+    expect(record!.retryCount).toBe(1);
+  });
+
+  it("increments retryCount across repeated failures", async () => {
+    const { surveyPersistence } = await freshPersistence();
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+
+    await surveyPersistence.updateSyncState(survey.id, { syncStatus: "failed", retryCount: 1 });
+    await surveyPersistence.updateSyncState(survey.id, { syncStatus: "failed", retryCount: 2 });
+    const record = await surveyPersistence.getSurvey(survey.id);
+
+    expect(record!.retryCount).toBe(2);
+  });
+
+  it("preserves the image and other survey data when only sync metadata changes", async () => {
+    const { surveyPersistence } = await freshPersistence();
+    const survey = makeLocalSurvey({ name: "Untouched Name" });
+    await surveyPersistence.saveSurvey(survey);
+
+    await surveyPersistence.updateSyncState(survey.id, { syncStatus: "synced", retryCount: 0 });
+    const record = await surveyPersistence.getSurvey(survey.id);
+
+    expect(record!.name).toBe("Untouched Name");
+    expect(record!.imageBlob.size).toBe(survey.imageBlob.size);
+    expect(await record!.imageBlob.text()).toBe("fake-jpeg-bytes");
+  });
+
+  it("keeps a synced record in IndexedDB rather than deleting it", async () => {
+    const { surveyPersistence } = await freshPersistence();
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+    await surveyPersistence.updateSyncState(survey.id, { syncStatus: "synced", retryCount: 0 });
+
+    const record = await surveyPersistence.getSurvey(survey.id);
+    const all = await surveyPersistence.listSurveys();
+
+    expect(record).toBeDefined();
+    expect(all.some((r) => r.id === survey.id)).toBe(true);
+  });
+
+  it("listPendingSync returns pending and failed records but not synced ones", async () => {
+    const { surveyPersistence } = await freshPersistence();
+    const pendingSurvey = makeLocalSurvey({ name: "Pending One" });
+    const failedSurvey = makeLocalSurvey({ name: "Failed One" });
+    const syncedSurvey = makeLocalSurvey({ name: "Synced One" });
+
+    await surveyPersistence.saveSurvey(pendingSurvey);
+    await surveyPersistence.saveSurvey(failedSurvey);
+    await surveyPersistence.saveSurvey(syncedSurvey);
+    await surveyPersistence.updateSyncState(failedSurvey.id, { syncStatus: "failed", retryCount: 1 });
+    await surveyPersistence.updateSyncState(syncedSurvey.id, { syncStatus: "synced", retryCount: 0 });
+
+    const pendingSync = await surveyPersistence.listPendingSync();
+    const names = pendingSync.map((r) => r.name).sort();
+
+    expect(names).toEqual(["Failed One", "Pending One"]);
+  });
+
+  it("rejects updateSyncState for an id that does not exist", async () => {
+    const { surveyPersistence, SurveyPersistenceError } = await freshPersistence();
+
+    await expect(
+      surveyPersistence.updateSyncState("00000000-0000-0000-0000-000000000000", { syncStatus: "synced" }),
+    ).rejects.toBeInstanceOf(SurveyPersistenceError);
+  });
 });
