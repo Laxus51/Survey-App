@@ -1,7 +1,21 @@
 .page {
-  max-width: 960px;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 16px 32px;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Targets whichever section holds the pagination controls (currently only
+   the Dashboard's "Synced Surveys" section) so it stretches to fill any
+   leftover vertical space, letting .pagination's margin-top: auto push the
+   controls to the bottom of the page instead of sitting right under a short
+   list of cards. */
+.page section:has(.pagination) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .page-header {
@@ -93,6 +107,7 @@
 
 .button-link {
   display: inline-block;
+  align-self: flex-start;
   margin-bottom: 16px;
   padding: 8px 14px;
   border-radius: 6px;
@@ -153,6 +168,19 @@
   margin: 0 0 4px;
 }
 
+.load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.sync-error-reason {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--danger);
+  overflow-wrap: break-word;
+}
+
 .sync-badge {
   display: inline-block;
   margin-top: 6px;
@@ -185,7 +213,8 @@
   align-items: center;
   gap: 12px;
   justify-content: center;
-  margin-top: 16px;
+  margin-top: auto;
+  padding-top: 16px;
 }
 
 .pagination button {
@@ -248,7 +277,7 @@
 }
 
 .capture-button {
-  width: 100%;
+  align-self: flex-start;
   background: var(--accent);
   color: var(--accent-contrast);
   border: none;

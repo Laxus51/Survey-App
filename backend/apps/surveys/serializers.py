@@ -20,6 +20,14 @@ class SurveySerializer(serializers.ModelSerializer):
     attributes = serializers.JSONField(required=False, validators=[validate_attributes])
     image = serializers.ImageField(validators=[validate_survey_image])
 
+    # Client-supplied, unlike created_at: only the capturing device knows when
+    # the survey was actually taken, which for an offline capture can be long
+    # before it reaches this server. Optional so requests from clients that
+    # don't send it (and every request predating this field) keep working.
+    # DateTimeField already rejects malformed input; no further bound is
+    # imposed here - see the phase report for that reasoning.
+    captured_at = serializers.DateTimeField(required=False, allow_null=True)
+
     class Meta:
         model = Survey
         fields = [
@@ -34,6 +42,7 @@ class SurveySerializer(serializers.ModelSerializer):
             "attributes",
             "sync_status",
             "retry_count",
+            "captured_at",
             "created_at",
             "updated_at",
         ]

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../services/httpClient";
 import * as surveyApi from "../services/surveyApi";
 import { surveyPersistence } from "../services/surveyPersistence";
@@ -15,7 +15,10 @@ type DetailsState =
 
 export function SurveyDetailsPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [state, setState] = useState<DetailsState>({ kind: "loading" });
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -59,6 +62,48 @@ export function SurveyDetailsPage() {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [id]);
+
+  // A record only exists on the server once it's "synced" (or is being
+  // viewed straight from the server, i.e. never had a local copy at all) -
+  // those cases need the server-side soft-delete; a still-local
+  // pending/failed record has nothing to delete server-side. "syncing" is
+  // deliberately excluded (button disabled below) to avoid racing the sync
+  // engine's in-flight upload of this same record.
+  const needsServerDelete = state.kind === "remote" || (state.kind === "local" && state.record.syncStatus === "synced");
+  const canDelete = state.kind === "remote" || (state.kind === "local" && state.record.syncStatus !== "syncing");
+
+  async function handleDelete() {
+    if (!id || !canDelete) return;
+    if (!window.confirm("Delete this survey? This cannot be undone.")) return;
+
+    setDeleteError(null);
+    setIsDeleting(true);
+    try {
+      if (needsServerDelete) {
+        if (!navigator.onLine) {
+          throw new Error("You're offline. Connect to the internet to delete a survey that's already synced.");
+        }
+        await surveyApi.deleteSurvey(id);
+      }
+      if (state.kind === "local") {
+        // Best-effort: the server copy (if any) is already gone at this
+        // point, so a failure here just leaves a stale local record the
+        // surveyor can delete again on next visit, rather than undoing the
+        // delete that already succeeded.
+        await surveyPersistence.deleteSurvey(id).catch(() => {});
+      }
+      navigate("/");
+    } catch (err) {
+      setDeleteError(
+        err instanceof ApiError
+          ? `Failed to delete survey (${err.status}).`
+          : err instanceof Error
+            ? err.message
+            : "Failed to delete survey. Please try again.",
+      );
+      setIsDeleting(false);
+    }
+  }
 
   return (
     <div className="page">
@@ -134,7 +179,11 @@ export function SurveyDetailsPage() {
               </span>
             </dd>
             <dt>Captured</dt>
-            <dd>{new Date(state.survey.created_at).toLocaleString()}</dd>
+            {/* Falls back to created_at for records stored before capture
+                time was recorded, which would otherwise render "Invalid
+                Date". The local branch above needs no fallback: its
+                createdAt is the capture time by construction. */}
+            <dd>{new Date(state.survey.captured_at ?? state.survey.created_at).toLocaleString()}</dd>
           </dl>
 
           {Object.keys(state.survey.attributes).length > 0 && (
@@ -151,6 +200,22 @@ export function SurveyDetailsPage() {
             </>
           )}
         </div>
+      )}
+
+      {(state.kind === "local" || state.kind === "remote") && (
+        <div className="button-row">
+          <button type="button" onClick={() => void handleDelete()} disabled={isDeleting || !canDelete}>
+            {isDeleting ? "Deleting…" : "Delete Survey"}
+          </button>
+          {state.kind === "local" && state.record.syncStatus === "syncing" && (
+            <span className="muted"> Wait for sync to finish before deleting.</span>
+          )}
+        </div>
+      )}
+      {deleteError && (
+        <p className="form-error" role="alert">
+          {deleteError}
+        </p>
       )}
     </div>
   );

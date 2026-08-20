@@ -3,12 +3,15 @@ import shutil
 import tempfile
 import threading
 import uuid
+from datetime import datetime
+from datetime import timezone as dt_timezone
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from PIL import Image
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
@@ -499,6 +502,145 @@ class SurveySyncTests(SurveyAPITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+@override_settings(MEDIA_ROOT=_TEST_MEDIA_ROOT)
+class SurveyCapturedAtTests(SurveyAPITestCase):
+    """captured_at (when the device took the survey) vs created_at (when the
+    row reached this server). They differ by however long the surveyor stayed
+    offline, which is the whole point of recording both."""
+
+    CAPTURED_AT = "2026-08-18T10:00:00Z"
+
+    def test_sync_persists_supplied_capture_time(self):
+        self.client.force_authenticate(self.user)
+        client_id = str(uuid.uuid4())
+
+        response = self.client.post(
+            self.sync_url,
+            self.valid_payload(id=client_id, captured_at=self.CAPTURED_AT),
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        survey = Survey.objects.get(pk=client_id)
+        self.assertEqual(survey.captured_at, datetime(2026, 8, 18, 10, 0, tzinfo=dt_timezone.utc))
+
+    def test_created_at_stays_server_controlled_and_differs_from_capture_time(self):
+        # The actual bug: a survey captured offline and synced days later was
+        # recorded as having happened at sync time.
+        self.client.force_authenticate(self.user)
+        client_id = str(uuid.uuid4())
+        before = timezone.now()
+
+        response = self.client.post(
+            self.sync_url,
+            self.valid_payload(id=client_id, captured_at=self.CAPTURED_AT),
+            format="multipart",
+        )
+        after = timezone.now()
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        survey = Survey.objects.get(pk=client_id)
+        self.assertEqual(survey.captured_at, datetime(2026, 8, 18, 10, 0, tzinfo=dt_timezone.utc))
+        # created_at is the server's own clock, not anything the client sent.
+        self.assertNotEqual(survey.created_at, survey.captured_at)
+        self.assertTrue(before <= survey.created_at <= after)
+
+    def test_client_cannot_dictate_created_at(self):
+        self.client.force_authenticate(self.user)
+        client_id = str(uuid.uuid4())
+        before = timezone.now()
+
+        response = self.client.post(
+            self.sync_url,
+            self.valid_payload(id=client_id, created_at="2020-01-01T00:00:00Z"),
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        survey = Survey.objects.get(pk=client_id)
+        self.assertGreaterEqual(survey.created_at, before)
+
+    def test_sync_without_capture_time_is_still_accepted(self):
+        # Backwards compatibility: clients predating this field keep working.
+        self.client.force_authenticate(self.user)
+        client_id = str(uuid.uuid4())
+
+        response = self.client.post(
+            self.sync_url, self.valid_payload(id=client_id), format="multipart"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertIsNone(Survey.objects.get(pk=client_id).captured_at)
+        self.assertIsNone(response.data["captured_at"])
+
+    def test_malformed_capture_time_is_rejected(self):
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            self.sync_url,
+            self.valid_payload(id=str(uuid.uuid4()), captured_at="not-a-datetime"),
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("captured_at", response.data)
+
+    def test_resync_backfills_capture_time_for_a_record_synced_without_one(self):
+        self.client.force_authenticate(self.user)
+        client_id = str(uuid.uuid4())
+        self.client.post(self.sync_url, self.valid_payload(id=client_id), format="multipart")
+        self.assertIsNone(Survey.objects.get(pk=client_id).captured_at)
+
+        response = self.client.post(
+            self.sync_url,
+            self.valid_payload(id=client_id, captured_at=self.CAPTURED_AT),
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(
+            Survey.objects.get(pk=client_id).captured_at,
+            datetime(2026, 8, 18, 10, 0, tzinfo=dt_timezone.utc),
+        )
+
+    def test_online_create_accepts_capture_time(self):
+        # The online POST path shares this serializer, so it behaves the same.
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            self.list_url, self.valid_payload(captured_at=self.CAPTURED_AT), format="multipart"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(
+            Survey.objects.get(pk=response.data["id"]).captured_at,
+            datetime(2026, 8, 18, 10, 0, tzinfo=dt_timezone.utc),
+        )
+
+    def test_online_create_without_capture_time_still_works(self):
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(self.list_url, self.valid_payload(), format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertIsNone(Survey.objects.get(pk=response.data["id"]).captured_at)
+
+    def test_capture_time_is_returned_by_list_and_detail(self):
+        self.client.force_authenticate(self.user)
+        client_id = str(uuid.uuid4())
+        self.client.post(
+            self.sync_url,
+            self.valid_payload(id=client_id, captured_at=self.CAPTURED_AT),
+            format="multipart",
+        )
+
+        detail = self.client.get(self.detail_url(client_id))
+        listing = self.client.get(self.list_url)
+
+        self.assertIsNotNone(detail.data["captured_at"])
+        self.assertIn("captured_at", listing.data["results"][0])
 
 
 @override_settings(MEDIA_ROOT=_TEST_MEDIA_ROOT)

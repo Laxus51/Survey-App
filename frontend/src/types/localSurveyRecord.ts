@@ -10,4 +10,9 @@ import type { SyncStatus } from "./survey";
 export interface LocalSurveyRecord extends LocalSurvey {
   syncStatus: SyncStatus;
   retryCount: number;
+  // Why the last sync attempt was rejected, when it was rejected for a reason
+  // the surveyor can act on. Without this a permanently-unsyncable survey
+  // shows only a "failed" badge, so the only available response is to press
+  // Retry forever against an error that will never resolve on its own.
+  lastError?: string;
 }

@@ -19,6 +19,7 @@ def create_survey(
     description="",
     attributes=None,
     id=None,
+    captured_at=None,
 ):
     kwargs = dict(
         user=user,
@@ -28,6 +29,9 @@ def create_survey(
         geometry=Point(longitude, latitude, srid=4326),
         accuracy=accuracy,
         attributes=attributes or {},
+        # Left as None when the client didn't report one; created_at remains
+        # the server's own record of when this row came into existence.
+        captured_at=captured_at,
         # A record only exists here because it was durably created on the
         # server, whether directly (this endpoint) or later via the offline
         # sync endpoint (Phase 4) — pending/syncing/failed are client-side
@@ -77,6 +81,7 @@ def sync_survey(
     accuracy,
     description="",
     attributes=None,
+    captured_at=None,
 ):
     """Create-or-update a survey by its client-generated UUID (POST /api/surveys/sync/).
 
@@ -103,6 +108,7 @@ def sync_survey(
                     geometry=geometry,
                     accuracy=accuracy,
                     attributes=attributes,
+                    captured_at=captured_at,
                     sync_status=Survey.SyncStatus.SYNCED,
                 )
             return survey, True
@@ -118,6 +124,10 @@ def sync_survey(
             survey.geometry = geometry
             survey.accuracy = accuracy
             survey.attributes = attributes
+            # Applied like every other field of the re-sent payload, which
+            # also lets a record first synced before this field existed pick
+            # up its capture time on a later retry.
+            survey.captured_at = captured_at
             survey.sync_status = Survey.SyncStatus.SYNCED
             survey.save()
             return survey, False

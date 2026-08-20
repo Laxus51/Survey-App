@@ -48,6 +48,15 @@ class Survey(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # When the surveyor actually captured this in the field, as reported by
+    # the capturing device. Distinct from created_at (when the row reached
+    # this server): a survey captured offline can sync days later, and both
+    # facts matter - the gap between them is exactly what an offline-first
+    # workflow produces. Nullable because rows created before this field
+    # existed have no capture time to recover, and older clients may not send
+    # one; readers fall back to created_at.
+    captured_at = models.DateTimeField(null=True, blank=True)
+
     is_deleted = models.BooleanField(default=False)
 
     class Meta:

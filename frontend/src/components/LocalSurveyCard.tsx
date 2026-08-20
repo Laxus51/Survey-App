@@ -24,13 +24,16 @@ export function LocalSurveyCard({ record, onRetry }: LocalSurveyCardProps) {
   return (
     <div className="survey-card">
       <Link to={`/surveys/${record.id}`} className="survey-card-link">
-        {imageUrl && <img src={imageUrl} alt={record.name} />}
+        {imageUrl && <img src={imageUrl} alt={record.name} loading="lazy" />}
         <div className="survey-card-body">
           <h2>{record.name}</h2>
           <p className="muted">{record.description || "No description"}</p>
           <span className={`sync-badge sync-badge--${record.syncStatus}`}>{record.syncStatus}</span>
           {record.syncStatus === "failed" && record.retryCount > 0 && (
             <span className="muted"> · retried {record.retryCount}×</span>
+          )}
+          {record.syncStatus === "failed" && record.lastError && (
+            <p className="sync-error-reason">{record.lastError}</p>
           )}
         </div>
       </Link>

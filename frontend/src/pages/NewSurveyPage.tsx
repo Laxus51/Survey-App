@@ -209,7 +209,14 @@ export function NewSurveyPage() {
 
       {imageBlob && (
         <div className="location-status">
-          {location.status === "locating" && <p>Getting your location…</p>}
+          {location.status === "locating" &&
+            (location.isAwaitingPermission ? (
+              <p>Waiting for location permission - tap “Allow” on your browser's prompt.</p>
+            ) : location.isUsingFallback ? (
+              <p>Couldn't get a precise GPS fix - trying a less precise method…</p>
+            ) : (
+              <p>Getting your location…</p>
+            ))}
           {location.status === "success" && (
             <p>
               Location: {location.latitude?.toFixed(6)}, {location.longitude?.toFixed(6)} (±

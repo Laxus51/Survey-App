@@ -26,6 +26,9 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# --- Dev tooling (not part of the app) ---
+ngrok.yml
+
 
 
 

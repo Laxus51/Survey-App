@@ -43,7 +43,15 @@ export async function compressImage(
     let smallestBlob: Blob | null = null;
     for (const quality of QUALITY_STEPS) {
       const blob = await canvasToBlob(canvas, "image/jpeg", quality);
-      if (!blob) continue;
+      // An empty Blob is truthy, so a `!blob` check alone lets a zero-byte
+      // result through - and `0 <= MAX_UPLOAD_BYTES` then reports it as a
+      // successful compression. Mobile browsers do return an empty (or null)
+      // blob when canvas encoding fails under memory pressure, which large
+      // phone-camera images can easily trigger; treating that as success is
+      // what let a 0-byte "photo" reach IndexedDB and be permanently
+      // rejected by the server ("The submitted file is empty.") long after
+      // the capture screen was gone.
+      if (!blob || blob.size === 0) continue;
       if (smallestBlob === null || blob.size < smallestBlob.size) {
         smallestBlob = blob;
       }

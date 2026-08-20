@@ -11,7 +11,8 @@ vi.mock("./surveyApi", () => ({ syncSurvey: vi.fn() }));
 // Imported after the mock declaration; vi.mock is hoisted above this file's
 // imports regardless of source order, so `syncSurvey` here is the mock.
 import * as surveyApi from "./surveyApi";
-import { runSync, subscribe } from "./syncEngine";
+import type { SyncEvent } from "./syncEngine";
+import { recoverInterruptedSyncs, runSync, subscribe } from "./syncEngine";
 
 // Only `id`/`created` matter to the sync engine's own logic; the rest of a
 // real SurveySyncResult is irrelevant to what's under test here.
@@ -29,6 +30,7 @@ function fakeSyncResult(id: string, created: boolean): SurveySyncResult {
     attributes: {},
     sync_status: "synced",
     retry_count: 0,
+    captured_at: null,
     created_at: "",
     updated_at: "",
   };
@@ -122,6 +124,20 @@ describe("syncEngine", () => {
     expect(payload.image).toBeInstanceOf(File);
     expect(payload.image.size).toBe(survey.imageBlob.size);
     expect(payload.image.type).toBe("image/jpeg");
+  });
+
+  it("sends the original capture time, not the time the sync happens", async () => {
+    // The bug this fixes: a survey captured offline days earlier was recorded
+    // by the server as having happened whenever it finally synced.
+    const capturedAt = "2026-08-18T10:00:00.000Z";
+    const survey = makeLocalSurvey({ createdAt: capturedAt });
+    await surveyPersistence.saveSurvey(survey);
+    vi.mocked(surveyApi.syncSurvey).mockResolvedValue(fakeSyncResult(survey.id, true));
+
+    await runSync();
+
+    const payload = vi.mocked(surveyApi.syncSurvey).mock.calls[0][0];
+    expect(payload.capturedAt).toBe(capturedAt);
   });
 
   it("does not lose the survey on a network failure, and leaves it pending", async () => {
@@ -255,5 +271,260 @@ describe("syncEngine", () => {
     unsubscribe();
 
     expect(listener).toHaveBeenCalled();
+  });
+
+  it("reports each record's transition, then one run-finished carrying the synced count", async () => {
+    const first = makeLocalSurvey({ name: "First" });
+    const second = makeLocalSurvey({ name: "Second" });
+    await surveyPersistence.saveSurvey(first);
+    await surveyPersistence.saveSurvey(second);
+    vi.mocked(surveyApi.syncSurvey).mockImplementation((payload) =>
+      Promise.resolve(fakeSyncResult(payload.id!, true)),
+    );
+    const events: SyncEvent[] = [];
+    const unsubscribe = subscribe((event) => events.push(event));
+
+    await runSync();
+    unsubscribe();
+
+    // syncing + synced per record, then exactly one run-finished.
+    expect(events.filter((e) => e.type === "record-changed")).toHaveLength(4);
+    const finished = events.filter((e) => e.type === "run-finished");
+    expect(finished).toHaveLength(1);
+    expect(finished[0]).toEqual({ type: "run-finished", syncedCount: 2 });
+    expect(events[events.length - 1].type).toBe("run-finished");
+  });
+
+  it("reports syncedCount 0 when a run rejects every record, so nothing landed server-side", async () => {
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+    vi.mocked(surveyApi.syncSurvey).mockRejectedValue(new ApiError(400, { name: ["Required."] }));
+    const events: SyncEvent[] = [];
+    const unsubscribe = subscribe((event) => events.push(event));
+
+    await runSync();
+    unsubscribe();
+
+    expect(events.at(-1)).toEqual({ type: "run-finished", syncedCount: 0 });
+  });
+
+  it("still finishes the run (reporting nothing synced) when offline", async () => {
+    setOnline(false);
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+    const events: SyncEvent[] = [];
+    const unsubscribe = subscribe((event) => events.push(event));
+
+    await runSync();
+    unsubscribe();
+
+    expect(surveyApi.syncSurvey).not.toHaveBeenCalled();
+    expect(events).toEqual([{ type: "run-finished", syncedCount: 0 }]);
+  });
+
+  it("never picks up a record that is currently syncing", async () => {
+    // The guard that makes the recovery below safe: a run must not grab a
+    // record whose request is genuinely in flight.
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+    await surveyPersistence.updateSyncState(survey.id, { syncStatus: "syncing" });
+
+    await runSync();
+
+    expect(surveyApi.syncSurvey).not.toHaveBeenCalled();
+  });
+});
+
+describe("syncEngine handling of transient server failures", () => {
+  it("does not mark a survey failed when the server is temporarily unavailable", async () => {
+    // The observed case: a 503 from the tunnel in front of the server, for a
+    // survey that synced perfectly on the very next attempt. Treating that as
+    // a rejection told the surveyor their survey was broken when it wasn't.
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+    vi.mocked(surveyApi.syncSurvey).mockRejectedValue(new ApiError(503, null));
+
+    await runSync();
+
+    const record = await surveyPersistence.getSurvey(survey.id);
+    expect(record!.syncStatus).toBe("pending");
+    expect(record!.retryCount).toBe(0);
+  });
+
+  it("still marks a survey failed when the server rejects it with a 4xx", async () => {
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+    vi.mocked(surveyApi.syncSurvey).mockRejectedValue(
+      new ApiError(400, { name: ["This field is required."] }),
+    );
+
+    await runSync();
+
+    const record = await surveyPersistence.getSurvey(survey.id);
+    expect(record!.syncStatus).toBe("failed");
+    expect(record!.retryCount).toBe(1);
+  });
+
+  it("still marks a survey failed on a 500, which may be caused by this payload", async () => {
+    // Kept distinct from 502/503/504 on purpose: silently re-sending a
+    // request that makes the application error out would hammer the server
+    // on every trigger with no way for the surveyor to see it happening.
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+    vi.mocked(surveyApi.syncSurvey).mockRejectedValue(new ApiError(500, null));
+
+    await runSync();
+
+    const record = await surveyPersistence.getSurvey(survey.id);
+    expect(record!.syncStatus).toBe("failed");
+    expect(record!.retryCount).toBe(1);
+  });
+
+  it("retries a transient failure automatically on the next run", async () => {
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+    vi.mocked(surveyApi.syncSurvey)
+      .mockRejectedValueOnce(new ApiError(503, null))
+      .mockResolvedValue(fakeSyncResult(survey.id, true));
+
+    await runSync();
+    expect((await surveyPersistence.getSurvey(survey.id))!.syncStatus).toBe("pending");
+
+    await runSync();
+
+    expect((await surveyPersistence.getSurvey(survey.id))!.syncStatus).toBe("synced");
+  });
+});
+
+describe("syncEngine handling of unusable images", () => {
+  it("fails a survey with an empty image without wasting an upload", async () => {
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+    // Bypasses saveSurvey's own guard to simulate a record whose bytes were
+    // already lost by an older build before that guard existed.
+    vi.spyOn(surveyPersistence, "listPendingSync").mockResolvedValue([
+      {
+        ...survey,
+        imageBlob: new Blob([], { type: "image/jpeg" }),
+        syncStatus: "pending",
+        retryCount: 0,
+      },
+    ]);
+
+    await runSync();
+
+    expect(surveyApi.syncSurvey).not.toHaveBeenCalled();
+    const record = await surveyPersistence.getSurvey(survey.id);
+    expect(record!.syncStatus).toBe("failed");
+    expect(record!.lastError).toMatch(/recapture/i);
+    vi.mocked(surveyPersistence.listPendingSync).mockRestore();
+  });
+
+  it("records the server's reason on a validation rejection", async () => {
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+    vi.mocked(surveyApi.syncSurvey).mockRejectedValue(
+      new ApiError(400, { image: ["The submitted file is empty."] }),
+    );
+
+    await runSync();
+
+    const record = await surveyPersistence.getSurvey(survey.id);
+    expect(record!.syncStatus).toBe("failed");
+    expect(record!.lastError).toBe("image: The submitted file is empty.");
+  });
+
+  it("clears a stale lastError once the survey finally syncs", async () => {
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+    await surveyPersistence.updateSyncState(survey.id, {
+      syncStatus: "failed",
+      retryCount: 1,
+      lastError: "image: The submitted file is empty.",
+    });
+    vi.mocked(surveyApi.syncSurvey).mockResolvedValue(fakeSyncResult(survey.id, true));
+
+    await runSync();
+
+    const record = await surveyPersistence.getSurvey(survey.id);
+    expect(record!.syncStatus).toBe("synced");
+    expect(record!.lastError).toBeUndefined();
+  });
+});
+
+describe("syncEngine recovery of interrupted syncs", () => {
+  it("returns a record stranded in 'syncing' to the queue so it can sync again", async () => {
+    // Reproduces the observed field failure: a survey left in "syncing" by an
+    // interrupted session (reload/tab close/stalled request) was invisible to
+    // listPendingSync forever, so it showed "syncing" indefinitely and the
+    // Retry button silently did nothing.
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+    await surveyPersistence.updateSyncState(survey.id, { syncStatus: "syncing" });
+    vi.mocked(surveyApi.syncSurvey).mockResolvedValue(fakeSyncResult(survey.id, true));
+
+    // Before recovery the record is unreachable by any trigger.
+    await runSync();
+    expect(surveyApi.syncSurvey).not.toHaveBeenCalled();
+
+    await recoverInterruptedSyncs();
+    expect((await surveyPersistence.getSurvey(survey.id))!.syncStatus).toBe("pending");
+
+    await runSync();
+
+    expect(surveyApi.syncSurvey).toHaveBeenCalledTimes(1);
+    expect((await surveyPersistence.getSurvey(survey.id))!.syncStatus).toBe("synced");
+  });
+
+  it("does not charge retryCount for an attempt that never completed", async () => {
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+    await surveyPersistence.updateSyncState(survey.id, { syncStatus: "syncing", retryCount: 2 });
+
+    await recoverInterruptedSyncs();
+
+    const record = await surveyPersistence.getSurvey(survey.id);
+    expect(record!.syncStatus).toBe("pending");
+    expect(record!.retryCount).toBe(2);
+  });
+
+  it("leaves pending, failed and synced records untouched", async () => {
+    const pending = makeLocalSurvey({ name: "Pending" });
+    const failed = makeLocalSurvey({ name: "Failed" });
+    const synced = makeLocalSurvey({ name: "Synced" });
+    await surveyPersistence.saveSurvey(pending);
+    await surveyPersistence.saveSurvey(failed);
+    await surveyPersistence.saveSurvey(synced);
+    await surveyPersistence.updateSyncState(failed.id, { syncStatus: "failed", retryCount: 1 });
+    await surveyPersistence.updateSyncState(synced.id, { syncStatus: "synced", retryCount: 0 });
+
+    await recoverInterruptedSyncs();
+
+    expect((await surveyPersistence.getSurvey(pending.id))!.syncStatus).toBe("pending");
+    expect((await surveyPersistence.getSurvey(failed.id))!.syncStatus).toBe("failed");
+    expect((await surveyPersistence.getSurvey(synced.id))!.syncStatus).toBe("synced");
+  });
+
+  it("notifies subscribers so the dashboard reflects the recovered state", async () => {
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+    await surveyPersistence.updateSyncState(survey.id, { syncStatus: "syncing" });
+    const listener = vi.fn();
+    const unsubscribe = subscribe(listener);
+
+    await recoverInterruptedSyncs();
+    unsubscribe();
+
+    expect(listener).toHaveBeenCalled();
+  });
+
+  it("does nothing when there is nothing stranded", async () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribe(listener);
+
+    await recoverInterruptedSyncs();
+    unsubscribe();
+
+    expect(listener).not.toHaveBeenCalled();
   });
 });

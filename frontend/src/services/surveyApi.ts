@@ -12,6 +12,9 @@ function buildSurveyFormData(payload: SurveyWritePayload): FormData {
   formData.set("longitude", String(payload.longitude));
   formData.set("accuracy", String(payload.accuracy));
   formData.set("attributes", JSON.stringify(payload.attributes ?? {}));
+  // Omitted rather than sent empty when absent: the field is optional
+  // server-side, and an empty string would be a malformed datetime.
+  if (payload.capturedAt) formData.set("captured_at", payload.capturedAt);
   return formData;
 }
 
@@ -43,9 +46,17 @@ export function deleteSurvey(id: string): Promise<void> {
   return authorizedRequest<void>(`/api/surveys/${id}/`, { method: "DELETE" });
 }
 
+// Generous timeout: this uploads a photo, which on slow mobile data can
+// legitimately take a while. It exists to bound a *stalled* connection, not
+// to cut off a slow-but-progressing upload - without it a hung request holds
+// the sync engine's in-flight lock forever and silently disables every
+// later sync trigger.
+const SYNC_REQUEST_TIMEOUT_MS = 90000;
+
 export function syncSurvey(payload: SurveyWritePayload): Promise<SurveySyncResult> {
   return authorizedRequest<SurveySyncResult>("/api/surveys/sync/", {
     method: "POST",
     body: buildSurveyFormData(payload),
+    timeoutMs: SYNC_REQUEST_TIMEOUT_MS,
   });
 }

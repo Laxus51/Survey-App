@@ -34,6 +34,19 @@ DEBUG = env_bool("DJANGO_DEBUG", True)
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
+# Dev-only, off by default: when Django sits behind a local HTTPS tunnel
+# (e.g. ngrok) that terminates TLS and forwards plain HTTP, request.scheme
+# is "http" unless told otherwise, so request.build_absolute_uri() (used for
+# SurveySerializer's image URLs) would return http:// URLs that an https
+# phone browser blocks as mixed content. Enabling this makes Django trust
+# the tunnel's X-Forwarded-Proto header instead. Not a custom proxy
+# implementation - this is Django's own built-in mechanism. Only enable this
+# when the app is exclusively reached through such a proxy (as in this
+# ngrok setup); it must stay off wherever Django is otherwise reachable
+# directly, since Django trusts this header unconditionally once set.
+if env_bool("DJANGO_TRUST_X_FORWARDED_PROTO", False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 
 # Application definition
 

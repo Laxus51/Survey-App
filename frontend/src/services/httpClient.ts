@@ -18,6 +18,23 @@ interface RequestOptions {
   method?: string;
   body?: unknown;
   query?: Record<string, string | number | undefined>;
+  // Aborts the request after this many ms. fetch() has no timeout of its own,
+  // so a stalled connection (common on mobile right as connectivity returns)
+  // hangs forever - which strands the sync engine's in-flight lock and
+  // silently disables every later sync trigger.
+  timeoutMs?: number;
+}
+
+// AbortController + setTimeout rather than AbortSignal.timeout(): the latter
+// is unavailable on the older mobile browsers this app targets.
+function withTimeout(timeoutMs: number | undefined): {
+  signal: AbortSignal | undefined;
+  done: () => void;
+} {
+  if (!timeoutMs) return { signal: undefined, done: () => {} };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return { signal: controller.signal, done: () => clearTimeout(timer) };
 }
 
 function buildUrl(path: string, query?: RequestOptions["query"]): string {
@@ -65,8 +82,13 @@ async function parseResponse<T>(response: Response): Promise<T> {
 // from the refresh call itself triggering another refresh attempt.
 export async function rawRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const init = buildRequestInit(options);
-  const response = await fetch(buildUrl(path, options.query), init);
-  return parseResponse<T>(response);
+  const { signal, done } = withTimeout(options.timeoutMs);
+  try {
+    const response = await fetch(buildUrl(path, options.query), { ...init, signal });
+    return await parseResponse<T>(response);
+  } finally {
+    done();
+  }
 }
 
 // Concurrent 401s must not each fire their own refresh call: with
@@ -89,8 +111,16 @@ async function ensureFreshAccessToken(): Promise<boolean> {
         tokenStore.setRefreshToken(tokens.refresh);
         return true;
       })
-      .catch(() => {
-        tokenStore.notifySessionExpired();
+      .catch((error: unknown) => {
+        // Only end the session when the server actually rejected the token.
+        // A network failure (fetch threw) means the request never arrived -
+        // discarding a still-valid refresh token there would sign a surveyor
+        // out mid-field the moment they lost signal. The caller still gets
+        // `false`, so the request fails normally and the sync engine
+        // classifies it as a network error rather than an auth failure.
+        if (error instanceof ApiError) {
+          tokenStore.notifySessionExpired();
+        }
         return false;
       })
       .finally(() => {
@@ -104,18 +134,49 @@ async function ensureFreshAccessToken(): Promise<boolean> {
 // retries the original request exactly one time.
 export async function authorizedRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const init = buildRequestInit(options);
+
+  // The access token lives in memory only, so after every reload there isn't
+  // one until a refresh runs. Sending the request regardless means a
+  // guaranteed 401 - and on the sync endpoint that means uploading the whole
+  // photo just to be told to authenticate, then uploading it a second time.
+  // Besides doubling a field surveyor's mobile data, the server answers that
+  // first 401 without reading the upload body, which is a well-known way to
+  // leave the connection unusable and make the immediate retry fail outright.
+  // Redeeming the refresh token first (only when we hold nothing to present)
+  // avoids both.
+  if (!tokenStore.getAccessToken() && tokenStore.getRefreshToken()) {
+    await ensureFreshAccessToken();
+  }
+
   const accessToken = tokenStore.getAccessToken();
   const headers = new Headers(init.headers);
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
 
-  let response = await fetch(buildUrl(path, options.query), { ...init, headers });
+  // Each attempt gets its own timer, so the retry below is not cut short by
+  // time the first attempt already spent.
+  const first = withTimeout(options.timeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(path, options.query), { ...init, headers, signal: first.signal });
+  } finally {
+    first.done();
+  }
 
   if (response.status === 401) {
     const refreshed = await ensureFreshAccessToken();
     if (refreshed) {
       const retryHeaders = new Headers(init.headers);
       retryHeaders.set("Authorization", `Bearer ${tokenStore.getAccessToken()}`);
-      response = await fetch(buildUrl(path, options.query), { ...init, headers: retryHeaders });
+      const retry = withTimeout(options.timeoutMs);
+      try {
+        response = await fetch(buildUrl(path, options.query), {
+          ...init,
+          headers: retryHeaders,
+          signal: retry.signal,
+        });
+      } finally {
+        retry.done();
+      }
     }
   }
 

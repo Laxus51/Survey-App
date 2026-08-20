@@ -276,4 +276,85 @@ describe("IndexedDBSurveyPersistence", () => {
       surveyPersistence.updateSyncState("00000000-0000-0000-0000-000000000000", { syncStatus: "synced" }),
     ).rejects.toBeInstanceOf(SurveyPersistenceError);
   });
+
+  it("stores image bytes by value, so the data survives independently of the original Blob", async () => {
+    // The phone-only failure this guards against: a Blob is structured-cloned
+    // into IndexedDB as a *reference* to a browser-managed backing store,
+    // which on mobile does not reliably outlive the session that created it.
+    // The record then reads back with correct metadata but zero readable
+    // bytes, and uploads as an empty file. Storing raw bytes removes the
+    // dependency on that backing store entirely.
+    const { surveyPersistence } = await freshPersistence();
+    const bytes = "real-jpeg-payload-bytes";
+    const survey = makeLocalSurvey({ imageBlob: new Blob([bytes], { type: "image/jpeg" }) });
+
+    await surveyPersistence.saveSurvey(survey);
+    // Simulates the session that created the Blob going away entirely.
+    await closeCurrentConnection!();
+    closeCurrentConnection = null;
+    const reopened = await freshPersistence();
+    const record = await reopened.surveyPersistence.getSurvey(survey.id);
+
+    expect(record!.imageBlob.size).toBe(new Blob([bytes]).size);
+    expect(await record!.imageBlob.text()).toBe(bytes);
+    expect(record!.imageBlob.type).toBe("image/jpeg");
+  });
+
+  it("refuses to persist a survey whose image has no bytes", async () => {
+    const { surveyPersistence, SurveyPersistenceError } = await freshPersistence();
+    const survey = makeLocalSurvey({ imageBlob: new Blob([], { type: "image/jpeg" }) });
+
+    await expect(surveyPersistence.saveSurvey(survey)).rejects.toBeInstanceOf(SurveyPersistenceError);
+    expect(await surveyPersistence.listSurveys()).toHaveLength(0);
+  });
+
+  it("preserves image bytes across a sync-state update", async () => {
+    const { surveyPersistence } = await freshPersistence();
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+
+    await surveyPersistence.updateSyncState(survey.id, { syncStatus: "failed", retryCount: 1 });
+    const record = await surveyPersistence.getSurvey(survey.id);
+
+    expect(await record!.imageBlob.text()).toBe("fake-jpeg-bytes");
+  });
+
+  it("records and clears lastError alongside sync state", async () => {
+    const { surveyPersistence } = await freshPersistence();
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+
+    await surveyPersistence.updateSyncState(survey.id, {
+      syncStatus: "failed",
+      retryCount: 1,
+      lastError: "image: The submitted file is empty.",
+    });
+    expect((await surveyPersistence.getSurvey(survey.id))!.lastError).toMatch(/submitted file is empty/);
+
+    await surveyPersistence.updateSyncState(survey.id, {
+      syncStatus: "synced",
+      retryCount: 0,
+      lastError: undefined,
+    });
+    expect((await surveyPersistence.getSurvey(survey.id))!.lastError).toBeUndefined();
+  });
+
+  it("deletes a local record", async () => {
+    const { surveyPersistence } = await freshPersistence();
+    const survey = makeLocalSurvey();
+    await surveyPersistence.saveSurvey(survey);
+
+    await surveyPersistence.deleteSurvey(survey.id);
+
+    expect(await surveyPersistence.getSurvey(survey.id)).toBeUndefined();
+    expect(await surveyPersistence.listSurveys()).toHaveLength(0);
+  });
+
+  it("deleting an id that does not exist does not throw", async () => {
+    const { surveyPersistence } = await freshPersistence();
+
+    await expect(
+      surveyPersistence.deleteSurvey("00000000-0000-0000-0000-000000000000"),
+    ).resolves.toBeUndefined();
+  });
 });

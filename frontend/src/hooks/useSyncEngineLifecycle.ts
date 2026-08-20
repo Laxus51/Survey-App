@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useAuth } from "../auth/AuthContext";
-import { runSync } from "../services/syncEngine";
+import { recoverInterruptedSyncs, runSync } from "../services/syncEngine";
 
 // Wired at the App level (see App.tsx) as a sibling of the page routes, not
 // inside NewSurveyPage or any capture component - the capture flow never
@@ -13,11 +13,24 @@ export function useSyncEngineLifecycle(): void {
   const { isAuthenticated } = useAuth();
 
   // Trigger A: application start/initialization - only if already online.
+  //
+  // Recovery runs first, and runs whether online or not: a survey stranded in
+  // "syncing" by an interrupted previous session is invisible to every sync
+  // trigger until it's reset, so it must be put back in the queue before this
+  // start-up run reads it - and while offline, so it's ready for the next one.
   useEffect(() => {
     if (!isAuthenticated) return;
-    if (navigator.onLine) {
-      void runSync();
-    }
+
+    void (async () => {
+      try {
+        await recoverInterruptedSyncs();
+      } catch {
+        // Recovery is best-effort - never block the sync run behind it.
+      }
+      if (navigator.onLine) {
+        await runSync();
+      }
+    })();
   }, [isAuthenticated]);
 
   // Trigger B: the browser regains connectivity.
