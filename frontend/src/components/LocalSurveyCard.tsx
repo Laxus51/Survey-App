@@ -1,10 +1,23 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { RefreshCw } from "lucide-react";
+import { SyncBadge } from "./SyncBadge";
 import type { LocalSurveyRecord } from "../types/localSurveyRecord";
 
 interface LocalSurveyCardProps {
   record: LocalSurveyRecord;
   onRetry?: () => void;
+}
+
+// Short, human capture time from the record's own createdAt - "9:12 AM" for
+// today, a short date otherwise. No new field and no date library: this is a
+// display format on data the record already carries.
+function formatCaptureTime(iso: string): string {
+  const date = new Date(iso);
+  const isToday = date.toDateString() === new Date().toDateString();
+  return isToday
+    ? date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 // Local records store a Blob, not a URL - each card manages its own object
@@ -22,24 +35,37 @@ export function LocalSurveyCard({ record, onRetry }: LocalSurveyCardProps) {
   // The Retry button sits outside the Link (not nested inside it) to avoid
   // a button-inside-anchor structure and its click-handling ambiguity.
   return (
-    <div className="survey-card">
-      <Link to={`/surveys/${record.id}`} className="survey-card-link">
-        {imageUrl && <img src={imageUrl} alt={record.name} loading="lazy" />}
-        <div className="survey-card-body">
-          <h2>{record.name}</h2>
-          <p className="muted">{record.description || "No description"}</p>
-          <span className={`sync-badge sync-badge--${record.syncStatus}`}>{record.syncStatus}</span>
-          {record.syncStatus === "failed" && record.retryCount > 0 && (
-            <span className="muted"> · retried {record.retryCount}×</span>
-          )}
+    <div className="card overflow-hidden border border-base-300 bg-base-100">
+      <Link to={`/surveys/${record.id}`} className="block">
+        {imageUrl && (
+          <img
+            src={imageUrl}
+            alt={record.name}
+            loading="lazy"
+            className="aspect-[4/3] w-full rounded-t-box object-cover"
+          />
+        )}
+        <div className="flex flex-col gap-1 p-4">
+          <h2 className="text-base font-semibold text-base-content">{record.name}</h2>
+          <p className="line-clamp-1 text-sm text-base-content/70">{record.description || "No description"}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <SyncBadge status={record.syncStatus} />
+            {record.syncStatus === "pending" && (
+              <span className="text-xs text-base-content/60">{formatCaptureTime(record.createdAt)}</span>
+            )}
+            {record.syncStatus === "failed" && record.retryCount > 0 && (
+              <span className="text-xs text-base-content/60">retried {record.retryCount}×</span>
+            )}
+          </div>
           {record.syncStatus === "failed" && record.lastError && (
-            <p className="sync-error-reason">{record.lastError}</p>
+            <p className="line-clamp-2 text-xs text-error">{record.lastError}</p>
           )}
         </div>
       </Link>
       {record.syncStatus === "failed" && onRetry && (
-        <div className="survey-card-footer">
-          <button type="button" onClick={onRetry}>
+        <div className="px-4 pb-4">
+          <button type="button" onClick={onRetry} className="btn btn-error btn-outline btn-sm min-h-11 w-full gap-1.5">
+            <RefreshCw className="size-4" aria-hidden="true" />
             Retry
           </button>
         </div>

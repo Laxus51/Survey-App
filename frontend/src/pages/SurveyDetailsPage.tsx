@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { AlertCircle, ArrowLeft, LoaderCircle, Trash2 } from "lucide-react";
+import { DetailRow } from "../components/DetailRow";
+import { SyncBadge } from "../components/SyncBadge";
 import { ApiError } from "../services/httpClient";
 import * as surveyApi from "../services/surveyApi";
 import { surveyPersistence } from "../services/surveyPersistence";
@@ -19,6 +22,7 @@ export function SurveyDetailsPage() {
   const [state, setState] = useState<DetailsState>({ kind: "loading" });
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -74,7 +78,6 @@ export function SurveyDetailsPage() {
 
   async function handleDelete() {
     if (!id || !canDelete) return;
-    if (!window.confirm("Delete this survey? This cannot be undone.")) return;
 
     setDeleteError(null);
     setIsDeleting(true);
@@ -106,116 +109,170 @@ export function SurveyDetailsPage() {
   }
 
   return (
-    <div className="page">
-      <Link to="/">&larr; Back to dashboard</Link>
+    <div className="min-h-svh bg-base-100">
+      <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
+        <div className="max-w-xl">
+          <Link to="/" className="btn btn-ghost btn-sm min-h-11 gap-1.5">
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            Back to dashboard
+          </Link>
 
-      {state.kind === "loading" && <p>Loading…</p>}
-      {state.kind === "not-found" && (
-        <p className="form-error" role="alert">
-          Survey not found.
-        </p>
-      )}
-      {state.kind === "error" && (
-        <p className="form-error" role="alert">
-          {state.message}
-        </p>
-      )}
+          {state.kind === "loading" && (
+            <p className="mt-4 flex items-center gap-2 text-sm text-base-content/70">
+              <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+              Loading…
+            </p>
+          )}
+          {state.kind === "not-found" && (
+            <div className="alert alert-error mt-4" role="alert">
+              <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
+              <span>Survey not found.</span>
+            </div>
+          )}
+          {state.kind === "error" && (
+            <div className="alert alert-error mt-4" role="alert">
+              <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
+              <span>{state.message}</span>
+            </div>
+          )}
 
-      {state.kind === "local" && (
-        <div className="survey-detail">
-          <img src={state.imageUrl} alt={state.record.name} />
-          <h1>{state.record.name}</h1>
-          <p>{state.record.description || "No description"}</p>
+          {state.kind === "local" && (
+            <div className="mt-4 flex flex-col gap-4">
+              <img
+                src={state.imageUrl}
+                alt={state.record.name}
+                className="max-h-[60vh] w-full rounded-box border border-base-300 object-contain"
+              />
+              <div>
+                <h1 className="text-2xl font-bold text-base-content">{state.record.name}</h1>
+                <p className="text-sm text-base-content/70">{state.record.description || "No description"}</p>
+              </div>
 
-          <dl>
-            <dt>Location</dt>
-            <dd>
-              {state.record.latitude.toFixed(6)}, {state.record.longitude.toFixed(6)} (±
-              {state.record.accuracy.toFixed(0)}m)
-            </dd>
-            <dt>Status</dt>
-            <dd>
-              <span className={`sync-badge sync-badge--${state.record.syncStatus}`}>
-                {state.record.syncStatus}
-              </span>
-              {state.record.retryCount > 0 && ` (retried ${state.record.retryCount}×)`}
-            </dd>
-            <dt>Captured</dt>
-            <dd>{new Date(state.record.createdAt).toLocaleString()}</dd>
-          </dl>
-
-          {Object.keys(state.record.attributes).length > 0 && (
-            <>
-              <h2>Attributes</h2>
-              <dl>
-                {Object.entries(state.record.attributes).map(([key, value]) => (
-                  <div key={key} className="attribute-row">
-                    <dt>{key}</dt>
-                    <dd>{value}</dd>
-                  </div>
-                ))}
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+                <DetailRow label="Location">
+                  {state.record.latitude.toFixed(6)}, {state.record.longitude.toFixed(6)} (±
+                  {state.record.accuracy.toFixed(0)}m)
+                </DetailRow>
+                <DetailRow label="Status">
+                  <SyncBadge status={state.record.syncStatus} />
+                  {state.record.retryCount > 0 && (
+                    <span className="ml-1 text-xs text-base-content/60">(retried {state.record.retryCount}×)</span>
+                  )}
+                </DetailRow>
+                <DetailRow label="Captured">{new Date(state.record.createdAt).toLocaleString()}</DetailRow>
               </dl>
-            </>
+
+              {Object.keys(state.record.attributes).length > 0 && (
+                <div>
+                  <h2 className="mb-2 text-sm font-semibold text-base-content">Attributes</h2>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+                    {Object.entries(state.record.attributes).map(([key, value]) => (
+                      <DetailRow key={key} label={key}>
+                        {value}
+                      </DetailRow>
+                    ))}
+                  </dl>
+                </div>
+              )}
+            </div>
           )}
-        </div>
-      )}
 
-      {state.kind === "remote" && (
-        <div className="survey-detail">
-          <img src={state.survey.image} alt={state.survey.name} />
-          <h1>{state.survey.name}</h1>
-          <p>{state.survey.description || "No description"}</p>
+          {state.kind === "remote" && (
+            <div className="mt-4 flex flex-col gap-4">
+              <img
+                src={state.survey.image}
+                alt={state.survey.name}
+                className="max-h-[60vh] w-full rounded-box border border-base-300 object-contain"
+              />
+              <div>
+                <h1 className="text-2xl font-bold text-base-content">{state.survey.name}</h1>
+                <p className="text-sm text-base-content/70">{state.survey.description || "No description"}</p>
+              </div>
 
-          <dl>
-            <dt>Location</dt>
-            <dd>
-              {state.survey.latitude.toFixed(6)}, {state.survey.longitude.toFixed(6)} (±
-              {state.survey.accuracy}m)
-            </dd>
-            <dt>Status</dt>
-            <dd>
-              <span className={`sync-badge sync-badge--${state.survey.sync_status}`}>
-                {state.survey.sync_status}
-              </span>
-            </dd>
-            <dt>Captured</dt>
-            {/* Falls back to created_at for records stored before capture
-                time was recorded, which would otherwise render "Invalid
-                Date". The local branch above needs no fallback: its
-                createdAt is the capture time by construction. */}
-            <dd>{new Date(state.survey.captured_at ?? state.survey.created_at).toLocaleString()}</dd>
-          </dl>
-
-          {Object.keys(state.survey.attributes).length > 0 && (
-            <>
-              <h2>Attributes</h2>
-              <dl>
-                {Object.entries(state.survey.attributes).map(([key, value]) => (
-                  <div key={key} className="attribute-row">
-                    <dt>{key}</dt>
-                    <dd>{value}</dd>
-                  </div>
-                ))}
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+                <DetailRow label="Location">
+                  {state.survey.latitude.toFixed(6)}, {state.survey.longitude.toFixed(6)} (±{state.survey.accuracy}
+                  m)
+                </DetailRow>
+                <DetailRow label="Status">
+                  <SyncBadge status={state.survey.sync_status} />
+                </DetailRow>
+                {/* Falls back to created_at for records stored before capture
+                    time was recorded, which would otherwise render "Invalid
+                    Date". The local branch above needs no fallback: its
+                    createdAt is the capture time by construction. */}
+                <DetailRow label="Captured">
+                  {new Date(state.survey.captured_at ?? state.survey.created_at).toLocaleString()}
+                </DetailRow>
               </dl>
-            </>
-          )}
-        </div>
-      )}
 
-      {(state.kind === "local" || state.kind === "remote") && (
-        <div className="button-row">
-          <button type="button" onClick={() => void handleDelete()} disabled={isDeleting || !canDelete}>
-            {isDeleting ? "Deleting…" : "Delete Survey"}
-          </button>
-          {state.kind === "local" && state.record.syncStatus === "syncing" && (
-            <span className="muted"> Wait for sync to finish before deleting.</span>
+              {Object.keys(state.survey.attributes).length > 0 && (
+                <div>
+                  <h2 className="mb-2 text-sm font-semibold text-base-content">Attributes</h2>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+                    {Object.entries(state.survey.attributes).map(([key, value]) => (
+                      <DetailRow key={key} label={key}>
+                        {value}
+                      </DetailRow>
+                    ))}
+                  </dl>
+                </div>
+              )}
+            </div>
+          )}
+
+          {(state.kind === "local" || state.kind === "remote") && (
+            <div className="mt-6 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsConfirmOpen(true)}
+                disabled={isDeleting || !canDelete}
+                className="btn btn-error btn-outline min-h-11 gap-2"
+              >
+                {isDeleting ? (
+                  <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Trash2 className="size-4" aria-hidden="true" />
+                )}
+                {isDeleting ? "Deleting…" : "Delete Survey"}
+              </button>
+              {state.kind === "local" && state.record.syncStatus === "syncing" && (
+                <span className="text-sm text-base-content/60">Wait for sync to finish before deleting.</span>
+              )}
+            </div>
+          )}
+          {deleteError && (
+            <div className="alert alert-error mt-4" role="alert">
+              <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
+              <span>{deleteError}</span>
+            </div>
           )}
         </div>
-      )}
-      {deleteError && (
-        <p className="form-error" role="alert">
-          {deleteError}
-        </p>
+      </div>
+
+      {isConfirmOpen && (
+        <div className="modal modal-open" role="dialog" aria-modal="true">
+          <div className="modal-box">
+            <h3 className="text-lg font-semibold text-base-content">Delete this survey?</h3>
+            <p className="py-2 text-sm text-base-content/70">This cannot be undone.</p>
+            <div className="modal-action">
+              <button type="button" onClick={() => setIsConfirmOpen(false)} className="btn min-h-11">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsConfirmOpen(false);
+                  void handleDelete();
+                }}
+                className="btn btn-error min-h-11"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => setIsConfirmOpen(false)} />
+        </div>
       )}
     </div>
   );

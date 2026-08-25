@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import type { ChangeEvent } from "react";
+import { AlertCircle, Camera, LoaderCircle, RefreshCw } from "lucide-react";
 import { compressImage } from "../../services/imageCompression";
 
 interface ImageCaptureProps {
@@ -55,7 +56,7 @@ export function ImageCapture({ previewUrl, onCaptured, onCleared, disabled }: Im
   }
 
   return (
-    <div className="capture-field">
+    <div className="flex flex-col gap-3">
       <input
         ref={inputRef}
         type="file"
@@ -67,24 +68,45 @@ export function ImageCapture({ previewUrl, onCaptured, onCleared, disabled }: Im
       />
 
       {!previewUrl && (
-        <button type="button" className="capture-button" onClick={openCamera} disabled={disabled || isProcessing}>
+        <button
+          type="button"
+          onClick={openCamera}
+          disabled={disabled || isProcessing}
+          className="btn btn-primary min-h-11 w-full gap-2"
+        >
+          {isProcessing ? (
+            <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Camera className="size-4" aria-hidden="true" />
+          )}
           {isProcessing ? "Processing photo…" : "Take Photo"}
         </button>
       )}
 
       {previewUrl && (
-        <div className="image-preview">
-          <img src={previewUrl} alt="Captured survey" />
-          <button type="button" onClick={handleRetake} disabled={disabled || isProcessing}>
+        <div className="flex flex-col gap-3">
+          <img
+            src={previewUrl}
+            alt="Captured survey"
+            className="max-h-[60vh] w-full rounded-box border border-base-300 object-contain"
+          />
+          <button
+            type="button"
+            onClick={handleRetake}
+            disabled={disabled || isProcessing}
+            className="btn btn-outline min-h-11 w-full gap-2"
+          >
+            <RefreshCw className="size-4" aria-hidden="true" />
             Retake Photo
           </button>
         </div>
       )}
 
       {error && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
+        <div className="alert alert-error" role="alert">
+          <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
+          <span>{error}</span>
+        </div>
       )}
     </div>
   );

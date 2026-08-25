@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { AlertCircle, ArrowLeft, Check, LoaderCircle, MapPin, RefreshCw } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { CustomAttributesEditor } from "../components/survey-capture/CustomAttributesEditor";
 import { ImageCapture } from "../components/survey-capture/ImageCapture";
@@ -43,6 +44,14 @@ export function NewSurveyPage() {
       if (imagePreviewUrlRef.current) URL.revokeObjectURL(imagePreviewUrlRef.current);
     };
   }, []);
+
+  // Moves keyboard/screen-reader focus to the error summary the moment it
+  // appears, per the "focusable error summary" pattern - a surveyor who
+  // taps "Review Survey" and gets rejected shouldn't have to hunt for why.
+  const errorSummaryRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (formErrors.length > 0) errorSummaryRef.current?.focus();
+  }, [formErrors]);
 
   function handleImageCaptured(blob: Blob, previewUrl: string) {
     setImageBlob(blob);
@@ -135,14 +144,29 @@ export function NewSurveyPage() {
 
   if (mode === "saved") {
     return (
-      <div className="page">
-        <h1>Survey saved</h1>
-        <p>Your survey was saved on this device and is pending synchronization.</p>
-        <div className="button-row">
-          <button type="button" onClick={handleStartNewSurvey}>
-            Add another survey
-          </button>
-          <Link to="/">Back to dashboard</Link>
+      <div className="min-h-svh bg-base-100">
+        <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
+          <div className="max-w-xl">
+            <div className="flex flex-col items-center gap-3 py-12 text-center">
+              <Check className="size-8 text-success" aria-hidden="true" />
+              <h1 className="text-xl font-bold text-base-content">Survey saved</h1>
+              <p className="text-sm text-base-content/70">
+                Your survey was saved on this device and is pending synchronization.
+              </p>
+              <div className="mt-2 flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleStartNewSurvey}
+                  className="btn btn-outline min-h-11 w-full sm:w-auto"
+                >
+                  Add another survey
+                </button>
+                <Link to="/" className="btn btn-primary min-h-11 w-full sm:w-auto">
+                  Back to dashboard
+                </Link>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -150,29 +174,47 @@ export function NewSurveyPage() {
 
   if (mode === "review") {
     return (
-      <div className="page">
-        <h1>Review Survey</h1>
-        <SurveyReview
-          imagePreviewUrl={imagePreviewUrl}
-          name={name}
-          description={description}
-          latitude={location.latitude}
-          longitude={location.longitude}
-          accuracy={location.accuracy}
-          attributes={attributes}
-        />
-        {saveError && (
-          <p className="form-error" role="alert">
-            {saveError}
-          </p>
-        )}
-        <div className="button-row">
-          <button type="button" onClick={() => setMode("edit")} disabled={isSaving}>
-            Edit
-          </button>
-          <button type="button" onClick={() => void handleSave()} disabled={isSaving}>
-            {isSaving ? "Saving…" : "Save Survey"}
-          </button>
+      <div className="min-h-svh bg-base-100">
+        <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
+          <div className="max-w-xl">
+            <h1 className="text-2xl font-bold text-base-content">Review Survey</h1>
+            <div className="mt-4">
+              <SurveyReview
+                imagePreviewUrl={imagePreviewUrl}
+                name={name}
+                description={description}
+                latitude={location.latitude}
+                longitude={location.longitude}
+                accuracy={location.accuracy}
+                attributes={attributes}
+              />
+            </div>
+            {saveError && (
+              <div className="alert alert-error mt-4" role="alert">
+                <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
+                <span>{saveError}</span>
+              </div>
+            )}
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => setMode("edit")}
+                disabled={isSaving}
+                className="btn btn-outline min-h-11 w-full sm:w-auto"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={isSaving}
+                className="btn btn-primary min-h-11 w-full gap-2 sm:w-auto"
+              >
+                {isSaving && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
+                {isSaving ? "Saving…" : "Save Survey"}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -180,90 +222,151 @@ export function NewSurveyPage() {
 
   if (storageQuota.status === "blocked") {
     return (
-      <div className="page">
-        <Link to="/">&larr; Back to dashboard</Link>
-        <h1>New Survey</h1>
-        <p className="form-error" role="alert">
-          Local storage on this device is nearly full. Sync or free up space before capturing new surveys.
-        </p>
+      <div className="min-h-svh bg-base-100">
+        <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
+          <div className="max-w-xl">
+            <Link to="/" className="btn btn-ghost btn-sm min-h-11 gap-1.5">
+              <ArrowLeft className="size-4" aria-hidden="true" />
+              Back to dashboard
+            </Link>
+            <h1 className="mt-2 text-2xl font-bold text-base-content">New Survey</h1>
+            <div className="alert alert-warning mt-4" role="alert">
+              <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
+              <span>
+                Local storage on this device is nearly full. Sync or free up space before capturing new surveys.
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="page">
-      <Link to="/">&larr; Back to dashboard</Link>
-      <h1>New Survey</h1>
+    <div className="min-h-svh bg-base-100">
+      <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
+        <div className="max-w-xl">
+          <Link to="/" className="btn btn-ghost btn-sm min-h-11 gap-1.5">
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            Back to dashboard
+          </Link>
+          <h1 className="mt-2 text-2xl font-bold text-base-content">New Survey</h1>
+          <p className="mt-1 text-sm text-base-content/60">Step 1 of 3 · Capture</p>
 
-      {storageQuota.status === "warning" && (
-        <p className="quota-warning" role="alert">
-          Local storage on this device is getting full. Sync existing surveys soon to free up space.
-        </p>
-      )}
-
-      <ImageCapture
-        previewUrl={imagePreviewUrl}
-        onCaptured={handleImageCaptured}
-        onCleared={handleImageCleared}
-      />
-
-      {imageBlob && (
-        <div className="location-status">
-          {location.status === "locating" &&
-            (location.isAwaitingPermission ? (
-              <p>Waiting for location permission - tap “Allow” on your browser's prompt.</p>
-            ) : location.isUsingFallback ? (
-              <p>Couldn't get a precise GPS fix - trying a less precise method…</p>
-            ) : (
-              <p>Getting your location…</p>
-            ))}
-          {location.status === "success" && (
-            <p>
-              Location: {location.latitude?.toFixed(6)}, {location.longitude?.toFixed(6)} (±
-              {location.accuracy?.toFixed(0)}m)
-            </p>
-          )}
-          {location.status === "error" && (
-            <div>
-              <p className="form-error" role="alert">
-                {location.errorMessage}
-              </p>
-              <button type="button" onClick={location.requestLocation}>
-                Retry Location
-              </button>
+          {storageQuota.status === "warning" && (
+            <div className="alert alert-warning mt-4" role="alert">
+              <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
+              <span>Local storage on this device is getting full. Sync existing surveys soon to free up space.</span>
             </div>
           )}
+
+          {formErrors.length > 0 && (
+            <div
+              ref={errorSummaryRef}
+              tabIndex={-1}
+              className="alert alert-error mt-4 flex-col items-start gap-2"
+              role="alert"
+            >
+              <div className="flex items-center gap-2 font-semibold">
+                <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
+                Fix these before continuing
+              </div>
+              <ul className="ml-7 list-disc text-sm">
+                {formErrors.map((error) => (
+                  <li key={error}>{error}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="mt-4">
+            <ImageCapture
+              previewUrl={imagePreviewUrl}
+              onCaptured={handleImageCaptured}
+              onCleared={handleImageCleared}
+            />
+          </div>
+
+          {imageBlob && (
+            <div className="mt-4">
+              {location.status === "locating" &&
+                (location.isAwaitingPermission ? (
+                  <p className="flex items-center gap-2 text-sm text-base-content/70">
+                    <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                    Waiting for location permission - tap “Allow” on your browser's prompt.
+                  </p>
+                ) : location.isUsingFallback ? (
+                  <p className="flex items-center gap-2 text-sm text-base-content/70">
+                    <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                    Couldn't get a precise GPS fix - trying a less precise method…
+                  </p>
+                ) : (
+                  <p className="flex items-center gap-2 text-sm text-base-content/70">
+                    <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                    Getting your location…
+                  </p>
+                ))}
+              {location.status === "success" && (
+                <p className="flex items-center gap-2 text-sm text-base-content/70">
+                  <MapPin className="size-4 shrink-0" aria-hidden="true" />
+                  Location: {location.latitude?.toFixed(6)}, {location.longitude?.toFixed(6)} (±
+                  {location.accuracy?.toFixed(0)}m)
+                </p>
+              )}
+              {location.status === "error" && (
+                <div className="flex flex-col gap-2">
+                  <div className="alert alert-error" role="alert">
+                    <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
+                    <span>{location.errorMessage}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={location.requestLocation}
+                    className="btn btn-outline btn-sm min-h-11 self-start gap-1.5"
+                  >
+                    <RefreshCw className="size-4" aria-hidden="true" />
+                    Retry Location
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="mt-4 flex flex-col gap-1">
+            <label htmlFor="survey-name" className="text-sm font-medium text-base-content">
+              Name
+            </label>
+            <input
+              id="survey-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+              className="input min-h-11 w-full"
+            />
+          </div>
+
+          <div className="mt-4 flex flex-col gap-1">
+            <label htmlFor="survey-description" className="text-sm font-medium text-base-content">
+              Description
+            </label>
+            <textarea
+              id="survey-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              rows={3}
+              className="textarea w-full"
+            />
+          </div>
+
+          <div className="mt-4">
+            <CustomAttributesEditor rows={attributeRows} onChange={setAttributeRows} />
+          </div>
+
+          <button type="button" onClick={handleContinueToReview} className="btn btn-primary mt-6 min-h-11 w-full">
+            Review Survey
+          </button>
         </div>
-      )}
-
-      <div className="field">
-        <label htmlFor="survey-name">Name</label>
-        <input id="survey-name" value={name} onChange={(event) => setName(event.target.value)} required />
       </div>
-
-      <div className="field">
-        <label htmlFor="survey-description">Description</label>
-        <textarea
-          id="survey-description"
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          rows={3}
-        />
-      </div>
-
-      <CustomAttributesEditor rows={attributeRows} onChange={setAttributeRows} />
-
-      {formErrors.length > 0 && (
-        <ul className="form-error-list">
-          {formErrors.map((error) => (
-            <li key={error}>{error}</li>
-          ))}
-        </ul>
-      )}
-
-      <button type="button" className="capture-button" onClick={handleContinueToReview}>
-        Review Survey
-      </button>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { Plus, X } from "lucide-react";
 import type { AttributeRow } from "../../utils/attributeRows";
 import { createEmptyAttributeRow, findDuplicateKeys } from "../../utils/attributeRows";
 
@@ -23,9 +24,9 @@ export function CustomAttributesEditor({ rows, onChange, disabled }: CustomAttri
   }
 
   return (
-    <div className="attributes-editor">
-      <h2>Custom fields</h2>
-      {rows.length === 0 && <p className="muted">No custom fields added.</p>}
+    <div className="flex flex-col gap-3">
+      <h2 className="text-base font-semibold text-base-content">Custom fields</h2>
+      {rows.length === 0 && <p className="text-sm text-base-content/60">No custom fields added.</p>}
 
       {rows.map((row) => {
         const trimmedKey = row.key.trim();
@@ -33,8 +34,8 @@ export function CustomAttributesEditor({ rows, onChange, disabled }: CustomAttri
         const isMissingKey = trimmedKey === "" && row.value.trim() !== "";
 
         return (
-          <div className="attribute-row-editor" key={row.rowId}>
-            <div className="attribute-row-inputs">
+          <div className="flex flex-col gap-1" key={row.rowId}>
+            <div className="flex items-center gap-2">
               <input
                 placeholder="Field name"
                 value={row.key}
@@ -42,6 +43,7 @@ export function CustomAttributesEditor({ rows, onChange, disabled }: CustomAttri
                 disabled={disabled}
                 aria-invalid={isDuplicate || isMissingKey}
                 aria-label="Custom field name"
+                className="input input-sm min-h-11 flex-1"
               />
               <input
                 placeholder="Value"
@@ -49,24 +51,32 @@ export function CustomAttributesEditor({ rows, onChange, disabled }: CustomAttri
                 onChange={(event) => updateRow(row.rowId, "value", event.target.value)}
                 disabled={disabled}
                 aria-label="Custom field value"
+                className="input input-sm min-h-11 flex-1"
               />
               <button
                 type="button"
                 onClick={() => removeRow(row.rowId)}
                 disabled={disabled}
                 aria-label="Remove custom field"
+                className="btn btn-ghost btn-square min-h-11"
               >
-                Remove
+                <X className="size-4" aria-hidden="true" />
               </button>
             </div>
-            {isDuplicate && <p className="form-error">Field name already used.</p>}
-            {isMissingKey && <p className="form-error">Enter a field name for this value.</p>}
+            {isDuplicate && <p className="text-xs text-error">Field name already used.</p>}
+            {isMissingKey && <p className="text-xs text-error">Enter a field name for this value.</p>}
           </div>
         );
       })}
 
-      <button type="button" onClick={addRow} disabled={disabled}>
-        + Add custom field
+      <button
+        type="button"
+        onClick={addRow}
+        disabled={disabled}
+        className="btn btn-outline btn-sm min-h-11 self-start gap-1.5"
+      >
+        <Plus className="size-4" aria-hidden="true" />
+        Add custom field
       </button>
     </div>
   );

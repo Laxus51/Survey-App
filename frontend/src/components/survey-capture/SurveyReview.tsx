@@ -1,3 +1,5 @@
+import { DetailRow } from "../DetailRow";
+
 interface SurveyReviewProps {
   imagePreviewUrl: string | null;
   name: string;
@@ -18,30 +20,36 @@ export function SurveyReview({
   attributes,
 }: SurveyReviewProps) {
   return (
-    <div className="survey-review">
-      {imagePreviewUrl && <img src={imagePreviewUrl} alt={name} />}
-      <h2>{name}</h2>
-      <p>{description || "No description"}</p>
+    <div className="flex flex-col gap-4">
+      {imagePreviewUrl && (
+        <img
+          src={imagePreviewUrl}
+          alt={name}
+          className="max-h-[60vh] w-full rounded-box border border-base-300 object-contain"
+        />
+      )}
+      <div>
+        <h2 className="text-lg font-semibold text-base-content">{name}</h2>
+        <p className="text-sm text-base-content/70">{description || "No description"}</p>
+      </div>
 
-      <dl>
-        <dt>Location</dt>
-        <dd>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+        <DetailRow label="Location">
           {latitude?.toFixed(6)}, {longitude?.toFixed(6)} (±{accuracy?.toFixed(0)}m)
-        </dd>
+        </DetailRow>
       </dl>
 
       {Object.keys(attributes).length > 0 && (
-        <>
-          <h3>Custom fields</h3>
-          <dl>
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-base-content">Custom fields</h3>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
             {Object.entries(attributes).map(([key, value]) => (
-              <div key={key} className="attribute-row">
-                <dt>{key}</dt>
-                <dd>{value}</dd>
-              </div>
+              <DetailRow key={key} label={key}>
+                {value}
+              </DetailRow>
             ))}
           </dl>
-        </>
+        </div>
       )}
     </div>
   );

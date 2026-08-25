@@ -1,98 +1,163 @@
-:root {
-  --text: #3f3d45;
-  --text-h: #08060d;
-  --bg: #fff;
-  --bg-subtle: #f7f7f8;
-  --border: #e2e1e5;
-  --accent: #6d28d9;
-  --accent-contrast: #fff;
-  --danger: #b3261e;
+/* Tailwind v4 (CSS-first config) + daisyUI, restricted to a single theme.
+   See DESIGN_SYSTEM.md for the full rationale and conventions - this file
+   only wires the foundation up.
 
-  --sans: system-ui, "Segoe UI", Roboto, sans-serif;
+   `legacy-base` is declared (empty) before the Tailwind import specifically
+   so it becomes the FIRST-registered cascade layer, and therefore the
+   LOWEST-priority one: CSS layer priority is order-of-first-declaration, and
+   Tailwind's own import registers its `base`/`components`/`utilities`
+   layers immediately after this. This isn't cosmetic - per the CSS Cascade
+   Layers spec, *unlayered* rules always beat *any* layered rule regardless
+   of source order or specificity. The plain `button`/`h1`/etc. rules below
+   were unlayered, so they were silently overriding daisyUI's `.btn-primary`
+   background, `.input` border, and Tailwind's `text-primary` utility on
+   every element they touch - not just on old pages, but wherever a
+   redesigned page tried to use a matching Tailwind/daisyUI class too. */
+@layer legacy-base;
+@import "tailwindcss";
 
-  font: 16px/1.45 var(--sans);
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@plugin "daisyui" {
+  themes: corporate --default;
 }
 
-@media (prefers-color-scheme: dark) {
+/* corporate's stock primary (oklch(58% .158 241.966)) reads as a bright,
+   saturated "electric" blue - too loud for a field-survey tool per user
+   feedback on the Login redesign. Overriding just the primary pair (per
+   daisyUI's documented @plugin "daisyui/theme" customization pattern - see
+   DESIGN_SYSTEM.md §5) keeps it a deliberate, themeable token rather than a
+   hardcoded color in any component: lower lightness + lower chroma reads as
+   a calmer, muted navy instead of a neon blue, while staying clearly "blue"
+   (same hue). Every other corporate token is inherited unchanged. */
+@plugin "daisyui/theme" {
+  name: "corporate";
+  default: true;
+  --color-primary: oklch(40% 0.09 240);
+  --color-primary-content: oklch(98% 0.01 240);
+}
+
+/* Keeps the project's existing system-font stack (covers Segoe UI on
+   Windows, Roboto on Android - relevant for a mobile field app) as the
+   Tailwind/daisyUI default, rather than silently switching to Tailwind's
+   own default sans stack or introducing a webfont. Sets both the `font-sans`
+   utility and, via @theme, the font daisyUI's own components inherit. */
+@theme {
+  --font-sans: system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+@layer legacy-base {
   :root {
-    --text: #d4d2d8;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --bg-subtle: #1f2028;
-    --border: #2e303a;
-    --accent: #c084fc;
-    --accent-contrast: #16171d;
+    --text: #3f3d45;
+    --text-h: #08060d;
+    --bg: #fff;
+    --bg-subtle: #f7f7f8;
+    --border: #e2e1e5;
+    --accent: #6d28d9;
+    --accent-contrast: #fff;
+    --danger: #b3261e;
+
+    --sans: system-ui, "Segoe UI", Roboto, sans-serif;
+
+    font: 16px/1.45 var(--sans);
+    /* Deliberately light-only: the app is corporate-theme/light-mode only for
+       now (see DESIGN_SYSTEM.md - "Theme"). This used to be `light dark`, with
+       a `prefers-color-scheme: dark` block below overriding these variables on
+       a dark-OS device - that's exactly the kind of unintended dark mode the
+       current design decision rules out, so it's removed rather than left to
+       silently fight the daisyUI corporate theme once new components use it
+       alongside these legacy variables. The variables and their values below
+       are otherwise unchanged, so existing pages render identically. */
+    color-scheme: light;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100svh;
+  }
+
+  h1,
+  h2 {
+    color: var(--text-h);
+    font-weight: 600;
+    margin: 0 0 12px;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.1rem;
+  }
+
+  p {
+    margin: 0 0 8px;
+  }
+
+  a {
+    color: var(--accent);
+  }
+
+  button {
+    font: inherit;
+    cursor: pointer;
+  }
+
+  input,
+  textarea,
+  button {
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font: inherit;
+  }
+
+  /* Minimum comfortable touch target on phones. */
+  button {
+    min-height: 44px;
+    padding: 8px 14px;
+    background: var(--bg);
+    color: var(--text-h);
+  }
+
+  input,
+  textarea {
+    padding: 10px 12px;
+    background: var(--bg);
+    color: var(--text-h);
+    width: 100%;
+  }
+
+  .muted {
+    color: var(--text);
+    opacity: 0.7;
+    font-size: 0.9rem;
   }
 }
 
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  min-height: 100svh;
-}
-
-h1,
-h2 {
-  color: var(--text-h);
-  font-weight: 600;
-  margin: 0 0 12px;
-}
-
-h1 {
-  font-size: 1.5rem;
-}
-
-h2 {
-  font-size: 1.1rem;
-}
-
-p {
-  margin: 0 0 8px;
-}
-
-a {
-  color: var(--accent);
-}
-
-button {
-  font: inherit;
-  cursor: pointer;
-}
-
-input,
-textarea,
-button {
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  font: inherit;
-}
-
-/* Minimum comfortable touch target on phones. */
-button {
-  min-height: 44px;
-  padding: 8px 14px;
-  background: var(--bg);
-  color: var(--text-h);
-}
-
-input,
-textarea {
-  padding: 10px 12px;
-  background: var(--bg);
-  color: var(--text-h);
-  width: 100%;
-}
-
-.muted {
-  color: var(--text);
-  opacity: 0.7;
-  font-size: 0.9rem;
+/* daisyUI's own `.input` focus state hardcodes --input-color to
+   base-content (near-black) AND draws it as a 2px outline offset 2px
+   outside the field's own border - two separate rectangles with a gap
+   between them, not a single focus indicator (see DESIGN_SYSTEM.md §11).
+   Recoloring --input-color alone (the first attempt here) only changed
+   the color of the outer rectangle - it was still visibly a second box.
+   Zeroing outline-offset collapses it onto the field's own border instead,
+   which is the actual "minimal, one box" look that was asked for.
+   To win against daisyUI's own component layer (instead of losing to it
+   like the old unlayered legacy CSS used to), this layer is deliberately
+   declared here, after `@plugin "daisyui"` above, making `overrides` the
+   LAST-registered (and therefore highest-priority) layer in the file -
+   the mirror image of the `legacy-base` trick at the top of this file. */
+@layer overrides {
+  .input:focus,
+  .input:focus-within {
+    --input-color: var(--color-primary);
+    outline-offset: 0;
+  }
 }

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
@@ -62,6 +63,7 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    tailwindcss(),
     // Basic PWA scaffold only: precaches the built app shell so the app can
     // be opened offline after a first visit. Custom caching strategies,
     // background sync, and the IndexedDB-backed sync engine are later phases.

@@ -26,6 +26,15 @@ function renderAtSurvey(id: string) {
   );
 }
 
+// Delete is now a two-step flow (per DESIGN_SYSTEM.md §13: destructive
+// actions get a real confirmation modal, replacing the old native
+// window.confirm()) - "Delete Survey" opens the modal, "Delete" inside it
+// actually triggers handleDelete.
+function clickDeleteAndConfirm() {
+  fireEvent.click(screen.getByRole("button", { name: "Delete Survey" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+}
+
 function makeLocalSurvey(overrides: Partial<LocalSurvey> = {}): LocalSurvey {
   const now = new Date().toISOString();
   return {
@@ -54,7 +63,6 @@ beforeEach(async () => {
     request.onblocked = () => resolve();
   });
   vi.mocked(surveyApi.deleteSurvey).mockReset().mockResolvedValue(undefined);
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
 });
 
@@ -88,7 +96,7 @@ describe("SurveyDetailsPage", () => {
     renderAtSurvey(survey.id);
     await screen.findByText("Never Synced");
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Survey" }));
+    clickDeleteAndConfirm();
 
     await screen.findByText("Dashboard Home");
     expect(surveyApi.deleteSurvey).not.toHaveBeenCalled();
@@ -103,7 +111,7 @@ describe("SurveyDetailsPage", () => {
     renderAtSurvey(survey.id);
     await screen.findByText("Already Synced");
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Survey" }));
+    clickDeleteAndConfirm();
 
     await screen.findByText("Dashboard Home");
     expect(surveyApi.deleteSurvey).toHaveBeenCalledWith(survey.id);
@@ -119,7 +127,7 @@ describe("SurveyDetailsPage", () => {
     renderAtSurvey(survey.id);
     await screen.findByText("Offline Synced");
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Survey" }));
+    clickDeleteAndConfirm();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/you're offline/i);
     expect(surveyApi.deleteSurvey).not.toHaveBeenCalled();
