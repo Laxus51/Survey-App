@@ -177,9 +177,11 @@ describe("SurveyDetailsPage capture timestamp", () => {
     renderAtSurvey(survey.id);
     await screen.findByText("Server Survey");
 
-    const expected = new Date(CAPTURED_AT).toLocaleString();
+    const expected = new Date(CAPTURED_AT).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
     expect(screen.getByText(expected)).toBeInTheDocument();
-    expect(screen.queryByText(new Date(CREATED_AT).toLocaleString())).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(new Date(CREATED_AT).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })),
+    ).not.toBeInTheDocument();
   });
 
   it("falls back to created_at for records stored before capture time existed", async () => {
@@ -191,7 +193,9 @@ describe("SurveyDetailsPage capture timestamp", () => {
     renderAtSurvey(survey.id);
     await screen.findByText("Server Survey");
 
-    expect(screen.getByText(new Date(CREATED_AT).toLocaleString())).toBeInTheDocument();
+    expect(
+      screen.getByText(new Date(CREATED_AT).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/invalid date/i)).not.toBeInTheDocument();
   });
 
@@ -202,6 +206,8 @@ describe("SurveyDetailsPage capture timestamp", () => {
     renderAtSurvey(survey.id);
     await screen.findByText("Local Capture");
 
-    expect(screen.getByText(new Date(CAPTURED_AT).toLocaleString())).toBeInTheDocument();
+    expect(
+      screen.getByText(new Date(CAPTURED_AT).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })),
+    ).toBeInTheDocument();
   });
 });

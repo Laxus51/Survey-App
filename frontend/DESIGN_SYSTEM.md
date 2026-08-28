@@ -307,7 +307,85 @@ Do not add new tokens speculatively. If a real, repeated problem appears later (
 
 ---
 
-## 21. Rules for Future Page Implementation
+## 21. Global Navigation & App Bar
+
+This is a cross-cutting structural pattern — like §10 (Buttons) or §12 (Status language) — not a page-specific layout decision. It applies to every current and future page unless a specific page task explicitly revisits it. Do not invent a per-page variant.
+
+### Root vs. secondary pages
+
+- **Dashboard (`/`) is the root/primary destination.** It carries the app's one global header. No other page duplicates it.
+- **New Survey (`/surveys/new`) and Survey Details (`/surveys/:id`) are secondary pages**, only ever reached by navigating from Dashboard (directly, or via a survey card). They get a compact, contextual back/title app bar instead of the global header.
+
+### Dashboard's global header
+
+Already implemented exactly this way in `DashboardPage.tsx` — this section documents it as the standing rule, not a new build:
+
+- Left: `Survey App` (static text, app identity)
+- Right: logged-in username, then `Log out`
+- **No back arrow** — Dashboard is the root; there's nothing to go back to.
+- Compact, static (not sticky), full-width, `border-b border-base-300` for separation — no shadow, no elevation.
+- `Log out` lives **only** here. No secondary page repeats it.
+
+### Mobile secondary-page app bar (New Survey, Survey Details)
+
+Target pattern for these two pages' next redesign pass — not applied yet by this task (see scope note at the end of this section):
+
+```
+┌──────────────────────────────┐
+│ ←   New Survey                │
+└──────────────────────────────┘
+```
+
+- One row: `ArrowLeft` icon, then the current page's title (`New Survey` / `Survey Details`) — nothing else.
+- **No visible "Back" or "Back to Dashboard" text.** The icon alone is the back affordance — a native app-bar convention, not a website link/button.
+- **No logout, no dropdown, no secondary controls** in this bar.
+- Bar: ~56px tall, full viewport width, `border-b border-base-300`, no shadow/gradient. Not sticky unless a future page-specific task justifies it (if it ever is, §9's existing sticky-nav-surfaces exception governs the shadow).
+- Back tap target: ~44×44px (§6/§17's existing touch-target rule), containing a `size-5`–`size-6` `ArrowLeft` icon (§15's icon-size convention).
+- Title typography: the `text-lg font-semibold` "Section heading" role from §4 — a page-level title, not the app-level title Dashboard uses.
+- This is **not** a `.btn` from §10's table — it's an app-bar control, not a page-body button. Don't style it as `btn btn-primary`/`btn-ghost`; it should read structurally as a title bar, not a floating action.
+
+### Desktop behavior
+
+Desktop keeps the same global-header concept already established (full-width bar: `Survey App` / username / `Log out`) rather than the compact mobile app bar. New Survey and Survey Details get a simple page-level back affordance within their existing spacious layout (e.g. a text-plus-icon back link near the page title) instead of a floating primary-blue button. The exact treatment is a page-level decision for that page's own next redesign pass, not fixed here — the only fixed rule is *don't reuse the mobile compact app bar on desktop, and don't build a sidebar/second header to make the two identical.*
+
+### Back-button behavior: router history, not a hardcoded route
+
+The back control calls history (`navigate(-1)` via `useNavigate()`), never an unconditional `navigate("/")`. "Back" then means what it says regardless of how the page was reached — including from a future page that isn't Dashboard.
+
+**Required fallback:** a user can land on `/surveys/new` or `/surveys/:id` directly (reload, deep link, typed URL) with no in-app history to go back to. React Router v6+ (this app uses v7) exposes the SPA's own navigation-stack position via `window.history.state?.idx`; `idx === 0` means this page is the first entry for this session — nothing to go back to:
+
+```tsx
+const navigate = useNavigate();
+
+function handleBack() {
+  if (window.history.state?.idx > 0) {
+    navigate(-1);
+  } else {
+    navigate("/", { replace: true });
+  }
+}
+```
+
+This is the simplest mechanism compatible with the app's existing `BrowserRouter` setup in `App.tsx` — no routing config change, no history-tracking context/provider, no new dependency. Future secondary-page app bars should reuse exactly this pattern (or a small shared hook wrapping it, once a second page actually needs one) rather than reinventing it.
+
+### Explicitly out of scope at this app's current size
+
+Three pages don't warrant more navigation chrome. Do not introduce, by default or "while I'm in there," unless the app's page count grows enough to force a revisit:
+
+- Hamburger menu / navigation drawer
+- Sidebar
+- Bottom navigation bar / navigation rail
+- Breadcrumbs
+- Profile dropdown
+- Notification menu
+
+### Scope note
+
+This section documents the *rule*. It does not itself redesign New Survey or Survey Details — their current pages still use an inline "Back to dashboard" button (`frontend/src/pages/NewSurveyPage.tsx`, `frontend/src/pages/SurveyDetailsPage.tsx`) rather than this app bar. That changes when each page gets its own next redesign pass, following this section.
+
+---
+
+## 22. Rules for Future Page Implementation
 
 Checklist before starting any page/component design or build:
 
@@ -323,8 +401,9 @@ Checklist before starting any page/component design or build:
 - [ ] Preserve the Pending Sync 20-item render cap + "Load more" pattern.
 - [ ] Preserve object-URL/component-identity stability — stable `key`s, no gratuitous remounting.
 - [ ] Existing tests must keep passing; add new tests for new behavior, don't delete coverage to make a redesign easier.
+- [ ] Follows §21's global navigation/app-bar rules — root vs. secondary-page treatment, back-button router-history semantics, no unnecessary nav chrome (hamburger/sidebar/bottom-nav/breadcrumbs/profile menu/notifications).
 - [ ] When in doubt about a color, spacing value, icon, or component choice, consult this document before improvising.
 
 ---
 
-*This document covers the global foundation only. Page-specific layout decisions (navigation pattern, Dashboard information architecture, New Survey step structure, camera screen layout, location visualization, Survey Details layout, etc.) are explicitly deferred to their own future design tasks and are not decided here.*
+*This document covers the global foundation only. Global navigation (§21) is decided. Remaining page-specific layout decisions (Dashboard information architecture, New Survey step structure, camera screen layout, location visualization, Survey Details layout, etc.) are explicitly deferred to their own future design tasks and are not decided here.*

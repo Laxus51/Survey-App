@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { AlertCircle, ArrowLeft, LoaderCircle, Trash2 } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
+import { AlertCircle, LoaderCircle, Trash2 } from "lucide-react";
+import { AttributeTable } from "../components/AttributeTable";
+import { DesktopBackLink } from "../components/DesktopBackLink";
 import { DetailRow } from "../components/DetailRow";
+import { MobileAppBar } from "../components/MobileAppBar";
 import { SyncBadge } from "../components/SyncBadge";
 import { ApiError } from "../services/httpClient";
 import * as surveyApi from "../services/surveyApi";
@@ -15,6 +18,19 @@ type DetailsState =
   | { kind: "remote"; survey: Survey }
   | { kind: "not-found" }
   | { kind: "error"; message: string };
+
+// Seconds add noise, not information, for a field-capture timestamp - hour
+// and minute are all a surveyor needs to place when this happened.
+function formatCapturedAt(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+}
+
+// Rounds to at most 1 decimal place, but drops a trailing ".0" for whole
+// numbers (105, not 105.0) - toFixed(1) alone always pads one on, even when
+// the reading happens to be exact.
+function formatAccuracy(accuracy: number): string {
+  return Number(accuracy.toFixed(1)).toString();
+}
 
 export function SurveyDetailsPage() {
   const { id } = useParams<{ id: string }>();
@@ -110,12 +126,10 @@ export function SurveyDetailsPage() {
 
   return (
     <div className="min-h-svh bg-base-100">
+      <MobileAppBar title="Survey Details" />
       <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="max-w-xl">
-          <Link to="/" className="btn btn-ghost btn-sm min-h-11 gap-1.5">
-            <ArrowLeft className="size-4" aria-hidden="true" />
-            Back to dashboard
-          </Link>
+          <DesktopBackLink />
 
           {state.kind === "loading" && (
             <p className="mt-4 flex items-center gap-2 text-sm text-base-content/70">
@@ -151,7 +165,7 @@ export function SurveyDetailsPage() {
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
                 <DetailRow label="Location">
                   {state.record.latitude.toFixed(6)}, {state.record.longitude.toFixed(6)} (±
-                  {state.record.accuracy.toFixed(0)}m)
+                  {formatAccuracy(state.record.accuracy)}m)
                 </DetailRow>
                 <DetailRow label="Status">
                   <SyncBadge status={state.record.syncStatus} />
@@ -159,19 +173,13 @@ export function SurveyDetailsPage() {
                     <span className="ml-1 text-xs text-base-content/60">(retried {state.record.retryCount}×)</span>
                   )}
                 </DetailRow>
-                <DetailRow label="Captured">{new Date(state.record.createdAt).toLocaleString()}</DetailRow>
+                <DetailRow label="Captured">{formatCapturedAt(state.record.createdAt)}</DetailRow>
               </dl>
 
               {Object.keys(state.record.attributes).length > 0 && (
                 <div>
                   <h2 className="mb-2 text-sm font-semibold text-base-content">Attributes</h2>
-                  <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-                    {Object.entries(state.record.attributes).map(([key, value]) => (
-                      <DetailRow key={key} label={key}>
-                        {value}
-                      </DetailRow>
-                    ))}
-                  </dl>
+                  <AttributeTable attributes={state.record.attributes} />
                 </div>
               )}
             </div>
@@ -191,8 +199,8 @@ export function SurveyDetailsPage() {
 
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
                 <DetailRow label="Location">
-                  {state.survey.latitude.toFixed(6)}, {state.survey.longitude.toFixed(6)} (±{state.survey.accuracy}
-                  m)
+                  {state.survey.latitude.toFixed(6)}, {state.survey.longitude.toFixed(6)} (±
+                  {formatAccuracy(state.survey.accuracy)}m)
                 </DetailRow>
                 <DetailRow label="Status">
                   <SyncBadge status={state.survey.sync_status} />
@@ -202,20 +210,14 @@ export function SurveyDetailsPage() {
                     Date". The local branch above needs no fallback: its
                     createdAt is the capture time by construction. */}
                 <DetailRow label="Captured">
-                  {new Date(state.survey.captured_at ?? state.survey.created_at).toLocaleString()}
+                  {formatCapturedAt(state.survey.captured_at ?? state.survey.created_at)}
                 </DetailRow>
               </dl>
 
               {Object.keys(state.survey.attributes).length > 0 && (
                 <div>
                   <h2 className="mb-2 text-sm font-semibold text-base-content">Attributes</h2>
-                  <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-                    {Object.entries(state.survey.attributes).map(([key, value]) => (
-                      <DetailRow key={key} label={key}>
-                        {value}
-                      </DetailRow>
-                    ))}
-                  </dl>
+                  <AttributeTable attributes={state.survey.attributes} />
                 </div>
               )}
             </div>

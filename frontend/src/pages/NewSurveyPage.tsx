@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertCircle, ArrowLeft, Check, LoaderCircle, MapPin, RefreshCw } from "lucide-react";
+import { AlertCircle, Check, LoaderCircle, MapPin, RefreshCw } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
+import { DesktopBackLink } from "../components/DesktopBackLink";
+import { MobileAppBar } from "../components/MobileAppBar";
 import { CustomAttributesEditor } from "../components/survey-capture/CustomAttributesEditor";
 import { ImageCapture } from "../components/survey-capture/ImageCapture";
 import { SurveyReview } from "../components/survey-capture/SurveyReview";
@@ -145,8 +147,10 @@ export function NewSurveyPage() {
   if (mode === "saved") {
     return (
       <div className="min-h-svh bg-base-100">
+        <MobileAppBar title="New Survey" />
         <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
           <div className="max-w-xl">
+            <DesktopBackLink />
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               <Check className="size-8 text-success" aria-hidden="true" />
               <h1 className="text-xl font-bold text-base-content">Survey saved</h1>
@@ -175,8 +179,10 @@ export function NewSurveyPage() {
   if (mode === "review") {
     return (
       <div className="min-h-svh bg-base-100">
+        <MobileAppBar title="New Survey" />
         <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
           <div className="max-w-xl">
+            <DesktopBackLink />
             <h1 className="text-2xl font-bold text-base-content">Review Survey</h1>
             <div className="mt-4">
               <SurveyReview
@@ -223,13 +229,11 @@ export function NewSurveyPage() {
   if (storageQuota.status === "blocked") {
     return (
       <div className="min-h-svh bg-base-100">
+        <MobileAppBar title="New Survey" />
         <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
           <div className="max-w-xl">
-            <Link to="/" className="btn btn-ghost btn-sm min-h-11 gap-1.5">
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to dashboard
-            </Link>
-            <h1 className="mt-2 text-2xl font-bold text-base-content">New Survey</h1>
+            <DesktopBackLink />
+            <h1 className="hidden text-2xl font-bold text-base-content md:block">New Survey</h1>
             <div className="alert alert-warning mt-4" role="alert">
               <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
               <span>
@@ -244,13 +248,11 @@ export function NewSurveyPage() {
 
   return (
     <div className="min-h-svh bg-base-100">
+      <MobileAppBar title="New Survey" />
       <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="max-w-xl">
-          <Link to="/" className="btn btn-ghost btn-sm min-h-11 gap-1.5">
-            <ArrowLeft className="size-4" aria-hidden="true" />
-            Back to dashboard
-          </Link>
-          <h1 className="mt-2 text-2xl font-bold text-base-content">New Survey</h1>
+          <DesktopBackLink />
+          <h1 className="hidden text-2xl font-bold text-base-content md:block">New Survey</h1>
           <p className="mt-1 text-sm text-base-content/60">Step 1 of 3 · Capture</p>
 
           {storageQuota.status === "warning" && (
