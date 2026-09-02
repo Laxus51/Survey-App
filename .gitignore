@@ -30,7 +30,7 @@ npm-debug.log*
 ngrok.yml
 
 
-
+.claude/settings.json
 
 .playwright-mcp
 CLAUDE.md

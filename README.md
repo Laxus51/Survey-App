@@ -55,8 +55,10 @@ cd frontend
 npm install
 
 copy .env.example .env.development
-# VITE_API_BASE_URL defaults to http://localhost:8000, which matches the
-# backend's default runserver port - usually no edit needed for local dev
+# Leave VITE_API_BASE_URL blank - it falls back to the page's own origin,
+# and Vite's dev-server proxy (vite.config.ts) forwards /api and /media to
+# the backend. Only set it to an absolute URL for a real deploy where the
+# frontend and backend are on different domains (see Deployment below).
 
 npm run dev
 ```
@@ -94,6 +96,78 @@ Take the DB backup and the media zip at the same time, from the same state
 of the app — a mismatch between them (rows referencing images that weren't
 included, or vice versa) is the actual failure mode this whole step exists
 to avoid.
+
+---
+
+## Deployment
+
+**Frontend → Vercel. Backend + Postgres → Render. Survey photos → Cloudflare R2.**
+
+Not ngrok: ngrok requires your own machine and the tunnel to be running at
+the exact moment someone opens the link, which doesn't work for an async
+review. Not Render's local disk for media: Render's filesystem is
+ephemeral (a photo saved to `backend/media/` is lost on the next
+restart/redeploy), and `urls.py` only serves `/media/*` when `DEBUG=True` —
+in a real deploy (`DEBUG=False`, as it must be), images wouldn't be
+reachable at all without a real storage backend, not just fragile. R2 is
+free (10GB, no egress fees) and S3-compatible, so it's a small
+`django-storages` config, not a rewrite.
+
+GeoDjango needs the GEOS/GDAL system libraries, which Render's native Python
+runtime can't install (no root/apt access) — that's why this app deploys on
+Render via **Docker** (`backend/Dockerfile`), not the plain Python buildpack.
+
+### 1. Cloudflare R2 (survey photos)
+
+1. Create an R2 bucket (e.g. `survey-app-media`).
+2. Enable public access on it (R2.dev subdomain is enough) so photo URLs are
+   directly viewable.
+3. Create an API token scoped to Object Read & Write on that bucket. Note
+   down: Account ID, Access Key ID, Secret Access Key, the bucket's public
+   R2.dev domain, and the account's S3 API endpoint
+   (`https://<account-id>.r2.cloudflarestorage.com`).
+
+### 2. Render (backend + Postgres)
+
+`backend/render.yaml` is a Blueprint that provisions the Postgres instance
+and the Docker web service together — in Render, "New" → "Blueprint",
+point it at this repo. (Double-check the Blueprint's exact YAML fields
+against Render's current docs before relying on it — this file was written
+without live access to verify the current schema.)
+
+After it provisions:
+
+1. **Enable PostGIS once**, via Render's psql shell against the new
+   database: `CREATE EXTENSION postgis;`
+2. **Fill in the env vars the Blueprint left blank** (`sync: false` in
+   `render.yaml`) on the web service:
+   - `DJANGO_ALLOWED_HOSTS` — this service's own hostname, e.g.
+     `survey-app-backend.onrender.com`
+   - `CORS_ALLOWED_ORIGINS` — the Vercel frontend's URL (step 3) — comes back
+     to this after step 3, since it isn't known until then
+   - `AWS_STORAGE_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+     `AWS_S3_ENDPOINT_URL`, `AWS_S3_CUSTOM_DOMAIN` — from step 1
+3. Migrations run automatically on every deploy (`preDeployCommand` in
+   `render.yaml`). Create the admin login once, via Render's shell:
+   `python manage.py createsuperuser`
+
+### 3. Vercel (frontend)
+
+1. Import this repo, set **Root Directory** to `frontend`.
+2. Set the environment variable `VITE_API_BASE_URL` to the Render backend's
+   URL from step 2 (e.g. `https://survey-app-backend.onrender.com`) —
+   `frontend/vercel.json`'s SPA rewrite is already committed, so client-side
+   routes like `/surveys/new` won't 404 on refresh.
+3. Deploy. Take the resulting `*.vercel.app` URL back to step 2's
+   `CORS_ALLOWED_ORIGINS`.
+
+### Verifying it worked
+
+- `curl https://<render-backend>/api/auth/login` (should reject with a real
+  405/401, not a connection error) confirms the backend is up and migrated.
+- Log in on the deployed frontend, capture or view a survey, and confirm the
+  photo actually loads from the R2 URL — that's the whole point of this
+  setup, so don't skip it.
 
 ---
 

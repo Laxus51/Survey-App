@@ -1,0 +1,50 @@
+# Render Blueprint - provisions the Postgres instance and the Docker web
+# service together from one "New Blueprint Instance". PostGIS itself still
+# needs one manual `CREATE EXTENSION postgis;` afterward (not something a
+# Blueprint's plain Postgres definition controls), and the env vars marked
+# `sync: false` below need real values filled in via Render's dashboard
+# (secrets, and values only known after the Vercel/R2 side exists - see
+# README.md's deployment section).
+databases:
+  - name: survey-app-db
+    databaseName: survey_app
+    plan: free
+
+services:
+  - type: web
+    name: survey-app-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    preDeployCommand: python manage.py migrate
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: survey-app-db
+          property: connectionString
+      - key: DB_SSL_REQUIRE
+        value: "True"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_TRUST_X_FORWARDED_PROTO
+        value: "True"
+      # Fill in once you know this service's own onrender.com URL.
+      - key: DJANGO_ALLOWED_HOSTS
+        sync: false
+      # Fill in once the Vercel frontend URL is known (see README.md).
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      # Cloudflare R2 credentials - see README.md's deployment section.
+      - key: AWS_STORAGE_BUCKET_NAME
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_S3_ENDPOINT_URL
+        sync: false
+      - key: AWS_S3_CUSTOM_DOMAIN
+        sync: false

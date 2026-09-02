@@ -48,6 +48,29 @@ ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 if env_bool("DJANGO_TRUST_X_FORWARDED_PROTO", False):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
+# Production hardening, enabled automatically whenever DEBUG=False (i.e. any
+# real deployment) - safe to gate on DEBUG alone since local dev always runs
+# under plain HTTP, where these would otherwise break admin login (session/
+# CSRF cookies) or force a redirect loop. Session/CSRF cookies matter here
+# only for the Django admin - the SPA's own API calls use JWT Bearer tokens,
+# not cookies. SECURE_SSL_REDIRECT requires DJANGO_TRUST_X_FORWARDED_PROTO to
+# also be set wherever Django sits behind a TLS-terminating proxy (Render):
+# without it, request.is_secure() reads every request as plain HTTP and this
+# redirects forever.
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 7  # 1 week - conservative first value
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+
+# This app has no email-sending feature at all (no password reset, no
+# notifications) - MAILERS' console backend is a harmless placeholder, not a
+# missed production setup, so Django's own deploy checklist flag for it
+# (mail.E001) doesn't apply here.
+SILENCED_SYSTEM_CHECKS = ["mail.E001"]
+
 
 # Application definition
 
@@ -168,14 +191,41 @@ USE_TZ = True
 
 # Static & media files
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
-# Media root is local disk for the MVP (see system design, Section 3);
-# object storage is an explicitly deferred future step, not implemented here.
+# Media defaults to local disk, same as always - fine for local dev, where
+# nothing below is set. A real deploy must set the AWS_* vars (Cloudflare R2
+# in practice - see .env.example): Render's filesystem is ephemeral (a photo
+# saved to local disk is lost on the next restart/redeploy), and urls.py only
+# serves MEDIA_URL when DEBUG=True, so without a real storage backend,
+# uploaded images wouldn't even be reachable in production, not just
+# fragile.
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    # WhiteNoise's compressed + hashed-filename storage, for STATIC_ROOT
+    # (Django admin's CSS/JS) once collectstatic has run - see WhiteNoiseMiddleware
+    # above.
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+
+AWS_STORAGE_BUCKET_NAME = os.environ.get("AWS_STORAGE_BUCKET_NAME")
+if AWS_STORAGE_BUCKET_NAME:
+    AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
+    # R2's S3-compatible endpoint, e.g. https://<account-id>.r2.cloudflarestorage.com
+    AWS_S3_ENDPOINT_URL = os.environ.get("AWS_S3_ENDPOINT_URL")
+    # R2's public R2.dev subdomain or a custom domain, host only (no scheme) -
+    # what ImageField.url is actually built from.
+    AWS_S3_CUSTOM_DOMAIN = os.environ.get("AWS_S3_CUSTOM_DOMAIN")
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_QUERYSTRING_AUTH = False  # public bucket - plain URLs, no signed/expiring query params
+    AWS_DEFAULT_ACL = None  # R2 doesn't support per-object ACLs the way AWS S3 does
+    STORAGES["default"] = {"BACKEND": "storages.backends.s3.S3Storage"}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
