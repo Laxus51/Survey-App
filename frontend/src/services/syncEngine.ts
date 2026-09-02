@@ -258,20 +258,28 @@ let inFlightRun: Promise<void> | null = null;
 // together, for example) must not start two queue processors - the second
 // caller reuses/awaits the run already in progress rather than starting a
 // second pass over the same records.
+//
+// Deliberately NOT gated on navigator.onLine: that property is well
+// documented as unreliable on iOS Safari - it can report false (and the
+// "online" event can fail to fire at all) after some real-world reconnects,
+// which silently disabled every future sync attempt with no way to recover
+// short of clearing site data. It's safe to just attempt the run regardless:
+// a record's own fetch() is the actual source of truth, and a genuine
+// network failure is already handled correctly below (classifySyncError
+// reverts the record to its prior status without charging a retry, rather
+// than treating "offline" as a rejection).
 export function runSync(): Promise<void> {
   if (!inFlightRun) {
     inFlightRun = (async () => {
       let syncedCount = 0;
 
-      if (navigator.onLine) {
-        // Snapshot once per run; a survey saved mid-run is picked up by the
-        // next run (next online event, app restart, or manual retry), not
-        // this one - matches "process each pending/failed record once per
-        // sync run."
-        const records = await surveyPersistence.listPendingSync();
-        for (const record of records) {
-          if (await syncOne(record)) syncedCount += 1;
-        }
+      // Snapshot once per run; a survey saved mid-run is picked up by the
+      // next run (next online/visibility event, app restart, or manual
+      // retry), not this one - matches "process each pending/failed record
+      // once per sync run."
+      const records = await surveyPersistence.listPendingSync();
+      for (const record of records) {
+        if (await syncOne(record)) syncedCount += 1;
       }
 
       // One event at the end carrying how many records actually landed on

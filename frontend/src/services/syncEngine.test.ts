@@ -248,16 +248,24 @@ describe("syncEngine", () => {
     expect(surveyApi.syncSurvey).toHaveBeenCalledTimes(1);
   });
 
-  it("does not attempt to sync when offline", async () => {
+  it("attempts to sync even when navigator.onLine reports false", async () => {
+    // navigator.onLine is well documented as unreliable on iOS Safari - it
+    // can report false (and the "online" event can fail to fire) even when
+    // the device is genuinely connected. runSync() must not use it as a
+    // pre-check that silently skips the whole queue; the record's own
+    // fetch() is the real source of truth (a genuine network failure is
+    // covered separately below, by "does not lose the survey on a network
+    // failure").
     setOnline(false);
     const survey = makeLocalSurvey();
     await surveyPersistence.saveSurvey(survey);
+    vi.mocked(surveyApi.syncSurvey).mockResolvedValue(fakeSyncResult(survey.id, true));
 
     await runSync();
 
-    expect(surveyApi.syncSurvey).not.toHaveBeenCalled();
+    expect(surveyApi.syncSurvey).toHaveBeenCalledTimes(1);
     const record = await surveyPersistence.getSurvey(survey.id);
-    expect(record!.syncStatus).toBe("pending");
+    expect(record!.syncStatus).toBe("synced");
   });
 
   it("notifies subscribers as records settle", async () => {
@@ -306,20 +314,6 @@ describe("syncEngine", () => {
     unsubscribe();
 
     expect(events.at(-1)).toEqual({ type: "run-finished", syncedCount: 0 });
-  });
-
-  it("still finishes the run (reporting nothing synced) when offline", async () => {
-    setOnline(false);
-    const survey = makeLocalSurvey();
-    await surveyPersistence.saveSurvey(survey);
-    const events: SyncEvent[] = [];
-    const unsubscribe = subscribe((event) => events.push(event));
-
-    await runSync();
-    unsubscribe();
-
-    expect(surveyApi.syncSurvey).not.toHaveBeenCalled();
-    expect(events).toEqual([{ type: "run-finished", syncedCount: 0 }]);
   });
 
   it("never picks up a record that is currently syncing", async () => {

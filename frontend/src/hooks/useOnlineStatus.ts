@@ -28,11 +28,31 @@ export function useOnlineStatus(): ConnectivityState {
       reconnectTimeout = setTimeout(() => setState("online"), 4000);
     }
 
+    // Best-effort self-heal for the iOS Safari case where "online"/"offline"
+    // silently fail to fire after some reconnects: visibilitychange fires
+    // reliably when the surveyor returns to the app, so re-reading
+    // navigator.onLine here can catch a banner stuck showing "Offline" even
+    // though the underlying property has since corrected itself. Not a full
+    // fix - the property itself can still be wrong - but this is
+    // display-only now (nothing functional depends on it; see
+    // useSyncEngineLifecycle.ts), so a best-effort correction is the right
+    // amount of engineering for it.
+    function handleVisibilityChange() {
+      if (document.visibilityState !== "visible" || !navigator.onLine) return;
+      setState((current) => {
+        if (current !== "offline") return current;
+        reconnectTimeout = setTimeout(() => setState("online"), 4000);
+        return "reconnected";
+      });
+    }
+
     window.addEventListener("offline", handleOffline);
     window.addEventListener("online", handleOnline);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("online", handleOnline);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       clearTimeout(reconnectTimeout);
     };
   }, []);

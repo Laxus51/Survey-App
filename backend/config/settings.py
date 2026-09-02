@@ -10,6 +10,7 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+import dj_database_url
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -70,6 +71,11 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Serves collected static files (Django admin's CSS/JS) directly from the
+    # WSGI process when DEBUG=False - Django itself doesn't serve them then,
+    # and this app has no separate static host. Must sit right after
+    # SecurityMiddleware, per WhiteNoise's own setup docs.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -102,17 +108,29 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 # Engine is GeoDjango's PostGIS backend, per the approved PostgreSQL + PostGIS
-# architecture. No models are defined against it yet (Phase 2).
-
+# architecture.
+#
+# dj_database_url reads a single DATABASE_URL (what Render's managed Postgres
+# provides) when set; the `default=` fallback reconstructs the exact same URL
+# local dev has always used from the individual DB_* vars, so nothing changes
+# for local/.env usage. `engine=` is forced explicitly because dj_database_url
+# maps a plain postgres:// scheme to Django's stock postgresql backend, not
+# GeoDjango's - without this override, PostGIS support silently disappears
+# the moment DATABASE_URL is used instead of the individual DB_* vars.
 DATABASES = {
-    "default": {
-        "ENGINE": "django.contrib.gis.db.backends.postgis",
-        "NAME": os.environ.get("DB_NAME", "survey_app"),
-        "USER": os.environ.get("DB_USER", "postgres"),
-        "PASSWORD": os.environ.get("DB_PASSWORD", ""),
-        "HOST": os.environ.get("DB_HOST", "localhost"),
-        "PORT": os.environ.get("DB_PORT", "5432"),
-    }
+    "default": dj_database_url.config(
+        env="DATABASE_URL",
+        default=(
+            f"postgresql://{os.environ.get('DB_USER', 'postgres')}:{os.environ.get('DB_PASSWORD', '')}"
+            f"@{os.environ.get('DB_HOST', 'localhost')}:{os.environ.get('DB_PORT', '5432')}"
+            f"/{os.environ.get('DB_NAME', 'survey_app')}"
+        ),
+        engine="django.contrib.gis.db.backends.postgis",
+        # Off by default (local dev has no TLS listener); Render's managed
+        # Postgres requires it for external connections - set DB_SSL_REQUIRE=True
+        # there.
+        ssl_require=env_bool("DB_SSL_REQUIRE", False),
+    )
 }
 
 # GeoDjango needs GEOS/GDAL native libraries. On Windows these often aren't on

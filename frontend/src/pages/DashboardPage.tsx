@@ -106,6 +106,22 @@ export function DashboardPage() {
     return () => window.removeEventListener("online", handleOnline);
   }, [loadSurveys, page]);
 
+  // Same problem, more reliable signal: iOS Safari can fail to fire "online"
+  // at all after some reconnects (the flakiness the listener above doesn't
+  // fully cover), which otherwise left this list stuck on a stale error with
+  // no way to recover short of clearing site data. visibilitychange fires
+  // reliably whenever the surveyor returns to the app, regardless of exactly
+  // how connectivity came back.
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void loadSurveys(page);
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [loadSurveys, page]);
+
   // Per-record events keep the badges live (pending -> syncing ->
   // synced/failed) by patching the record already in state, rather than
   // re-reading IndexedDB. A run over 100 surveys emits ~200 of these, and
