@@ -19,10 +19,15 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+from .views import health_check
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', include('apps.authentication.urls')),
     path('api/surveys/', include('apps.surveys.urls')),
+    # No auth, no /api/ prefix: a plain target for uptime monitors/keep-alive
+    # pings, not an app endpoint.
+    path('healthz/', health_check, name='health-check'),
 ]
 
 if settings.DEBUG:
