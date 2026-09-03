@@ -3,10 +3,10 @@ interface DetailRowProps {
   children: React.ReactNode;
 }
 
-// One label/value pair for a definition-list block - reused across
-// SurveyReview and SurveyDetailsPage (Location/Status/Captured, and custom
-// attributes) so all three don't independently invent the same layout.
-// Rendered inside a parent `<dl className="grid grid-cols-[auto_1fr] ...">`.
+// One label/value pair for a definition-list block, used across
+// SurveyDetailsPage's Location/Status/Captured rows so it doesn't
+// independently invent the same layout per field. Rendered inside a parent
+// `<dl className="grid grid-cols-[auto_1fr] ...">`.
 export function DetailRow({ label, children }: DetailRowProps) {
   return (
     <>

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeDatabaseForTests } from "../services/indexedDbClient";
 import { surveyPersistence } from "../services/surveyPersistence";
@@ -48,17 +48,21 @@ function setOnline(value: boolean) {
   Object.defineProperty(navigator, "onLine", { value, configurable: true });
 }
 
-async function fillOutAndReachReview() {
+// Fills out the required fields but does not save - each test performs
+// (and asserts on) the actual "Save Survey" click itself, same shape as
+// before this page dropped its separate review step.
+function fillOutForm() {
   render(
-    <MemoryRouter>
-      <NewSurveyPage />
+    <MemoryRouter initialEntries={["/surveys/new"]}>
+      <Routes>
+        <Route path="/surveys/new" element={<NewSurveyPage />} />
+        <Route path="/" element={<div>Dashboard Home</div>} />
+      </Routes>
     </MemoryRouter>,
   );
 
   fireEvent.click(screen.getByText("Fake Capture"));
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Test Survey" } });
-  fireEvent.click(screen.getByRole("button", { name: "Review Survey" }));
-  await screen.findByText("Review Survey");
 }
 
 beforeEach(async () => {
@@ -81,31 +85,31 @@ afterEach(async () => {
 
 describe("NewSurveyPage - save triggers sync", () => {
   it("(a) triggers runSync() after a successful local save while online and authenticated", async () => {
-    await fillOutAndReachReview();
+    fillOutForm();
 
     fireEvent.click(screen.getByRole("button", { name: "Save Survey" }));
 
-    await screen.findByText("Survey saved");
+    await screen.findByText("Dashboard Home");
     expect(runSyncMock).toHaveBeenCalledTimes(1);
   });
 
   it("(b) does not attempt a sync when offline", async () => {
     setOnline(false);
-    await fillOutAndReachReview();
+    fillOutForm();
 
     fireEvent.click(screen.getByRole("button", { name: "Save Survey" }));
 
-    await screen.findByText("Survey saved");
+    await screen.findByText("Dashboard Home");
     expect(runSyncMock).not.toHaveBeenCalled();
   });
 
   it("does not trigger sync when not authenticated", async () => {
     mockIsAuthenticated = false;
-    await fillOutAndReachReview();
+    fillOutForm();
 
     fireEvent.click(screen.getByRole("button", { name: "Save Survey" }));
 
-    await screen.findByText("Survey saved");
+    await screen.findByText("Dashboard Home");
     expect(runSyncMock).not.toHaveBeenCalled();
   });
 
@@ -116,9 +120,9 @@ describe("NewSurveyPage - save triggers sync", () => {
       recordCountAtTriggerTime = records.length;
     });
 
-    await fillOutAndReachReview();
+    fillOutForm();
     fireEvent.click(screen.getByRole("button", { name: "Save Survey" }));
-    await screen.findByText("Survey saved");
+    await screen.findByText("Dashboard Home");
 
     await waitFor(() => expect(recordCountAtTriggerTime).toBe(1));
   });
@@ -126,7 +130,7 @@ describe("NewSurveyPage - save triggers sync", () => {
   it("(d) does not trigger sync when the local IndexedDB save itself fails", async () => {
     vi.spyOn(surveyPersistence, "saveSurvey").mockRejectedValueOnce(new Error("disk full"));
 
-    await fillOutAndReachReview();
+    fillOutForm();
     fireEvent.click(screen.getByRole("button", { name: "Save Survey" }));
 
     await screen.findByText(/could not save/i);

@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { AlertCircle, Check, LoaderCircle, MapPin, RefreshCw } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { AlertCircle, LoaderCircle, MapPin, RefreshCw } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { DesktopBackLink } from "../components/DesktopBackLink";
 import { MobileAppBar } from "../components/MobileAppBar";
 import { CustomAttributesEditor } from "../components/survey-capture/CustomAttributesEditor";
 import { ImageCapture } from "../components/survey-capture/ImageCapture";
-import { SurveyReview } from "../components/survey-capture/SurveyReview";
 import { useGeolocationCapture } from "../hooks/useGeolocationCapture";
 import { useStorageQuota } from "../hooks/useStorageQuota";
 import { SurveyPersistenceError, surveyPersistence } from "../services/surveyPersistence";
@@ -16,18 +15,16 @@ import type { AttributeRow } from "../utils/attributeRows";
 import { attributeRowsAreValid, attributeRowsToRecord } from "../utils/attributeRows";
 import { generateUuid } from "../utils/uuid";
 
-type Mode = "edit" | "review" | "saved";
-
 export function NewSurveyPage() {
   const { isAuthenticated } = useAuth();
-  const [surveyId, setSurveyId] = useState(() => generateUuid());
+  const navigate = useNavigate();
+  const [surveyId] = useState(() => generateUuid());
   const [imageBlob, setImageBlob] = useState<Blob | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const location = useGeolocationCapture();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [attributeRows, setAttributeRows] = useState<AttributeRow[]>([]);
-  const [mode, setMode] = useState<Mode>("edit");
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -39,8 +36,8 @@ export function NewSurveyPage() {
   imagePreviewUrlRef.current = imagePreviewUrl;
 
   // Guards against a leaked object URL if the surveyor captures a photo and
-  // then navigates away (e.g. "Back to dashboard") without saving, retaking,
-  // or starting a new survey - those paths already revoke it themselves.
+  // then navigates away (e.g. "Back to dashboard") without saving or
+  // retaking - those paths already revoke it themselves.
   useEffect(() => {
     return () => {
       if (imagePreviewUrlRef.current) URL.revokeObjectURL(imagePreviewUrlRef.current);
@@ -48,8 +45,8 @@ export function NewSurveyPage() {
   }, []);
 
   // Moves keyboard/screen-reader focus to the error summary the moment it
-  // appears, per the "focusable error summary" pattern - a surveyor who
-  // taps "Review Survey" and gets rejected shouldn't have to hunt for why.
+  // appears, per the "focusable error summary" pattern - a surveyor who taps
+  // "Save Survey" and gets rejected shouldn't have to hunt for why.
   const errorSummaryRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (formErrors.length > 0) errorSummaryRef.current?.focus();
@@ -68,7 +65,10 @@ export function NewSurveyPage() {
     setImagePreviewUrl(null);
   }
 
-  function handleContinueToReview() {
+  // Validates, then saves directly - no separate review step. The surveyor
+  // checks their own entries on this same form rather than on a second,
+  // read-only screen.
+  async function handleSave() {
     const errors: string[] = [];
     if (!imageBlob) errors.push("Capture a photo before continuing.");
     if (location.status !== "success") {
@@ -82,14 +82,10 @@ export function NewSurveyPage() {
       return;
     }
     setFormErrors([]);
-    setMode("review");
-  }
 
-  async function handleSave() {
     if (!imageBlob || location.latitude === null || location.longitude === null || location.accuracy === null) {
-      // Shouldn't happen (handleContinueToReview already guards this), but
-      // keeps this safe if state changed unexpectedly while reviewing.
-      setMode("edit");
+      // Shouldn't happen - the checks above just confirmed all four - but
+      // keeps TypeScript's null-narrowing honest without an unsafe cast.
       return;
     }
 
@@ -121,109 +117,13 @@ export function NewSurveyPage() {
       if (navigator.onLine && isAuthenticated) {
         void runSync();
       }
-      setMode("saved");
+      navigate("/", { replace: true });
     } catch (error) {
       setSaveError(
         error instanceof SurveyPersistenceError ? error.message : "Could not save the survey. Please try again.",
       );
-    } finally {
       setIsSaving(false);
     }
-  }
-
-  function handleStartNewSurvey() {
-    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
-    setSurveyId(generateUuid());
-    setImageBlob(null);
-    setImagePreviewUrl(null);
-    setName("");
-    setDescription("");
-    setAttributeRows([]);
-    setFormErrors([]);
-    setSaveError(null);
-    setMode("edit");
-  }
-
-  if (mode === "saved") {
-    return (
-      <div className="min-h-svh bg-base-100">
-        <MobileAppBar title="New Survey" />
-        <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
-          <div className="max-w-xl">
-            <DesktopBackLink />
-            <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <Check className="size-8 text-success" aria-hidden="true" />
-              <h1 className="text-xl font-bold text-base-content">Survey saved</h1>
-              <p className="text-sm text-base-content/70">
-                Your survey was saved on this device and is pending synchronization.
-              </p>
-              <div className="mt-2 flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
-                <button
-                  type="button"
-                  onClick={handleStartNewSurvey}
-                  className="btn btn-outline min-h-11 w-full sm:w-auto"
-                >
-                  Add another survey
-                </button>
-                <Link to="/" className="btn btn-primary min-h-11 w-full sm:w-auto">
-                  Back to dashboard
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (mode === "review") {
-    return (
-      <div className="min-h-svh bg-base-100">
-        <MobileAppBar title="New Survey" />
-        <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
-          <div className="max-w-xl">
-            <DesktopBackLink />
-            <h1 className="text-2xl font-bold text-base-content">Review Survey</h1>
-            <div className="mt-4">
-              <SurveyReview
-                imagePreviewUrl={imagePreviewUrl}
-                name={name}
-                description={description}
-                latitude={location.latitude}
-                longitude={location.longitude}
-                accuracy={location.accuracy}
-                attributes={attributes}
-              />
-            </div>
-            {saveError && (
-              <div className="alert alert-error mt-4" role="alert">
-                <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
-                <span>{saveError}</span>
-              </div>
-            )}
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
-                onClick={() => setMode("edit")}
-                disabled={isSaving}
-                className="btn btn-outline min-h-11 w-full sm:w-auto"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSave()}
-                disabled={isSaving}
-                className="btn btn-primary min-h-11 w-full gap-2 sm:w-auto"
-              >
-                {isSaving && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
-                {isSaving ? "Saving…" : "Save Survey"}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
   }
 
   if (storageQuota.status === "blocked") {
@@ -253,7 +153,6 @@ export function NewSurveyPage() {
         <div className="max-w-xl">
           <DesktopBackLink />
           <h1 className="hidden text-2xl font-bold text-base-content md:block">New Survey</h1>
-          <p className="mt-1 text-sm text-base-content/60">Step 1 of 3 · Capture</p>
 
           {storageQuota.status === "warning" && (
             <div className="alert alert-warning mt-4" role="alert">
@@ -343,6 +242,7 @@ export function NewSurveyPage() {
               value={name}
               onChange={(event) => setName(event.target.value)}
               required
+              disabled={isSaving}
               className="input min-h-11 w-full"
             />
           </div>
@@ -356,16 +256,30 @@ export function NewSurveyPage() {
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               rows={3}
+              disabled={isSaving}
               className="textarea w-full"
             />
           </div>
 
           <div className="mt-4">
-            <CustomAttributesEditor rows={attributeRows} onChange={setAttributeRows} />
+            <CustomAttributesEditor rows={attributeRows} onChange={setAttributeRows} disabled={isSaving} />
           </div>
 
-          <button type="button" onClick={handleContinueToReview} className="btn btn-primary mt-6 min-h-11 w-full">
-            Review Survey
+          {saveError && (
+            <div className="alert alert-error mt-4" role="alert">
+              <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
+              <span>{saveError}</span>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={isSaving}
+            className="btn btn-primary mt-6 min-h-11 w-full gap-2"
+          >
+            {isSaving && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
+            {isSaving ? "Saving…" : "Save Survey"}
           </button>
         </div>
       </div>
