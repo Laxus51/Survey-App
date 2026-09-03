@@ -155,7 +155,7 @@ export function SurveyDetailsPage() {
               <img
                 src={state.imageUrl}
                 alt={state.record.name}
-                className="max-h-[60vh] w-full rounded-box border border-base-300 object-contain"
+                className="max-h-[60vh] max-w-full self-center rounded-box border border-base-300"
               />
               <div>
                 <h1 className="text-2xl font-bold text-base-content">{state.record.name}</h1>
@@ -190,7 +190,7 @@ export function SurveyDetailsPage() {
               <img
                 src={state.survey.image}
                 alt={state.survey.name}
-                className="max-h-[60vh] w-full rounded-box border border-base-300 object-contain"
+                className="max-h-[60vh] max-w-full self-center rounded-box border border-base-300"
               />
               <div>
                 <h1 className="text-2xl font-bold text-base-content">{state.survey.name}</h1>
