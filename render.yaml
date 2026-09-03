@@ -1,10 +1,11 @@
-# Render Blueprint - provisions the Postgres instance and the Docker web
-# service together from one "New Blueprint Instance". PostGIS itself still
-# needs one manual `CREATE EXTENSION postgis;` afterward (not something a
-# Blueprint's plain Postgres definition controls), and the env vars marked
-# `sync: false` below need real values filled in via Render's dashboard
-# (secrets, and values only known after the Vercel/R2 side exists - see
-# README.md's deployment section).
+# Render Blueprint - provisions the Docker web service. The database is
+# deliberately NOT provisioned here: Render's free Postgres deletes itself
+# after 30 days, unworkable for a project that runs longer than that, so
+# Postgres lives on Neon instead (also PostGIS-capable, no forced expiry,
+# autosuspends on idle rather than deleting data) - DATABASE_URL below is a
+# plain secret pointing at it, not a `fromDatabase` reference to a
+# Render-managed instance. See README.md's deployment section for the Neon
+# setup steps.
 #
 # Lives at the repo root (not backend/) on purpose: Render auto-detects a
 # Blueprint at the repository root, and dockerfilePath/dockerContext below
@@ -15,11 +16,6 @@
 # instead run as part of the Docker image's own start command (see
 # backend/Dockerfile) - safe to run on every start since it's a no-op once
 # there's nothing new to migrate.
-databases:
-  - name: survey-app-db
-    databaseName: survey_app
-    plan: free
-
 services:
   - type: web
     name: survey-app-backend
@@ -28,10 +24,10 @@ services:
     dockerContext: ./backend
     plan: free
     envVars:
+      # Neon connection string (includes its own sslmode=require) - see
+      # README.md's deployment section.
       - key: DATABASE_URL
-        fromDatabase:
-          name: survey-app-db
-          property: connectionString
+        sync: false
       - key: DB_SSL_REQUIRE
         value: "True"
       - key: DJANGO_SECRET_KEY

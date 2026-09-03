@@ -101,7 +101,7 @@ to avoid.
 
 ## Deployment
 
-**Frontend → Vercel. Backend + Postgres → Render. Survey photos → Cloudflare R2.**
+**Frontend → Vercel. Backend → Render. Postgres → Neon. Survey photos → Cloudflare R2.**
 
 Not ngrok: ngrok requires your own machine and the tunnel to be running at
 the exact moment someone opens the link, which doesn't work for an async
@@ -111,11 +111,22 @@ restart/redeploy), and `urls.py` only serves `/media/*` when `DEBUG=True` —
 in a real deploy (`DEBUG=False`, as it must be), images wouldn't be
 reachable at all without a real storage backend, not just fragile. R2 is
 free (10GB, no egress fees) and S3-compatible, so it's a small
-`django-storages` config, not a rewrite.
+`django-storages` config, not a rewrite. Not Render's own free Postgres
+either: it's deleted outright after 30 days, unworkable for a project that
+runs longer than that — Neon (also PostGIS-capable) autosuspends on idle
+instead, with no forced data expiry.
 
 GeoDjango needs the GEOS/GDAL system libraries, which Render's native Python
 runtime can't install (no root/apt access) — that's why this app deploys on
 Render via **Docker** (`backend/Dockerfile`), not the plain Python buildpack.
+
+Two other free-tier Render limits shaped the setup below, not just Postgres:
+**no `preDeployCommand`** (paid-only) — migrations run from the Docker
+image's own start command instead — and **no Shell tab** (also paid-only) —
+`createsuperuser` runs non-interactively from that same start command,
+reading `DJANGO_SUPERUSER_USERNAME`/`EMAIL`/`PASSWORD`. Both are idempotent,
+so re-running them on every restart is harmless. The web service also
+**sleeps after 15 minutes idle** — see "Keeping it awake" below.
 
 ### 1. Cloudflare R2 (survey photos)
 
@@ -127,50 +138,63 @@ Render via **Docker** (`backend/Dockerfile`), not the plain Python buildpack.
    R2.dev domain, and the account's S3 API endpoint
    (`https://<account-id>.r2.cloudflarestorage.com`).
 
-### 2. Render (backend + Postgres)
+### 2. Neon (Postgres + PostGIS)
 
-`render.yaml` (repo root) is a Blueprint that provisions the Postgres
-instance and the Docker web service together — in Render, "New" →
-"Blueprint", point it at this repo; Render auto-detects it since it's at
-the repo root.
+1. Create a Neon project (free tier).
+2. Enable PostGIS once, via Neon's own SQL Editor (no local `psql` needed):
+   `CREATE EXTENSION postgis;`
+3. Copy the connection string Neon gives you (it already includes
+   `sslmode=require`) — this is `DATABASE_URL` in the next step.
 
-After it provisions:
+### 3. Render (backend)
 
-1. **Enable PostGIS once**, via Render's psql shell against the new
-   database: `CREATE EXTENSION postgis;`
-2. **Fill in the env vars the Blueprint left blank** (`sync: false` in
-   `render.yaml`) on the web service:
-   - `DJANGO_ALLOWED_HOSTS` — this service's own hostname, e.g.
-     `survey-app-backend.onrender.com`
-   - `CORS_ALLOWED_ORIGINS` — the Vercel frontend's URL (step 3) — comes back
-     to this after step 3, since it isn't known until then
-   - `AWS_STORAGE_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
-     `AWS_S3_ENDPOINT_URL`, `AWS_S3_CUSTOM_DOMAIN` — from step 1
-   - `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_EMAIL`,
-     `DJANGO_SUPERUSER_PASSWORD` — your chosen admin login (see next point)
-3. Migrations, and superuser creation, both run automatically on every
-   container start (baked into `backend/Dockerfile`'s start command, not a
-   Render "pre-deploy command" or the Shell tab — neither is available on
-   the free plan). Superuser creation is idempotent (`|| true`), so it's
-   harmless that it re-runs on every restart.
+`render.yaml` (repo root) is a Blueprint that provisions the Docker web
+service — in Render, "New" → "Blueprint", point it at this repo; Render
+auto-detects it since it's at the repo root. It does **not** provision a
+database (see above) — `DATABASE_URL` is one of the blank env vars you fill
+in yourself, pointed at Neon.
 
-### 3. Vercel (frontend)
+After it provisions, **fill in the env vars the Blueprint left blank**
+(`sync: false` in `render.yaml`) on the web service:
+- `DATABASE_URL` — the Neon connection string from step 2
+- `DJANGO_ALLOWED_HOSTS` — this service's own hostname, e.g.
+  `survey-app-backend.onrender.com`
+- `CORS_ALLOWED_ORIGINS` — the Vercel frontend's URL (step 4) — comes back to
+  this after step 4, since it isn't known until then
+- `AWS_STORAGE_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+  `AWS_S3_ENDPOINT_URL`, `AWS_S3_CUSTOM_DOMAIN` — from step 1
+- `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_EMAIL`,
+  `DJANGO_SUPERUSER_PASSWORD` — your chosen admin login
+
+Saving triggers a redeploy, which runs migrations and creates the superuser
+against Neon automatically — no extra step needed.
+
+### 4. Vercel (frontend)
 
 1. Import this repo, set **Root Directory** to `frontend`.
 2. Set the environment variable `VITE_API_BASE_URL` to the Render backend's
-   URL from step 2 (e.g. `https://survey-app-backend.onrender.com`) —
+   URL from step 3 (e.g. `https://survey-app-backend.onrender.com`) —
    `frontend/vercel.json`'s SPA rewrite is already committed, so client-side
    routes like `/surveys/new` won't 404 on refresh.
-3. Deploy. Take the resulting `*.vercel.app` URL back to step 2's
+3. Deploy. Take the resulting `*.vercel.app` URL back to step 3's
    `CORS_ALLOWED_ORIGINS`.
 
 ### Verifying it worked
 
-- `curl https://<render-backend>/api/auth/login` (should reject with a real
-  405/401, not a connection error) confirms the backend is up and migrated.
+- `curl https://<render-backend>/healthz/` (should return `{"status": "ok"}`)
+  confirms the backend is up and migrated.
 - Log in on the deployed frontend, capture or view a survey, and confirm the
   photo actually loads from the R2 URL — that's the whole point of this
   setup, so don't skip it.
+
+### Keeping it awake
+
+Render's free web service sleeps after 15 minutes idle. `/healthz/`
+(`config/views.py`) is a public, unauthenticated endpoint specifically for
+an uptime monitor to ping — e.g. [UptimeRobot](https://uptimerobot.com),
+free plan, HTTP(s) monitor on `https://<render-backend>/healthz/` every 5
+minutes. This only keeps the *web service* awake — Neon's own autosuspend
+on the database is separate and unaffected by this.
 
 ---
 
