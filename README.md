@@ -129,11 +129,10 @@ Render via **Docker** (`backend/Dockerfile`), not the plain Python buildpack.
 
 ### 2. Render (backend + Postgres)
 
-`backend/render.yaml` is a Blueprint that provisions the Postgres instance
-and the Docker web service together — in Render, "New" → "Blueprint",
-point it at this repo. (Double-check the Blueprint's exact YAML fields
-against Render's current docs before relying on it — this file was written
-without live access to verify the current schema.)
+`render.yaml` (repo root) is a Blueprint that provisions the Postgres
+instance and the Docker web service together — in Render, "New" →
+"Blueprint", point it at this repo; Render auto-detects it since it's at
+the repo root.
 
 After it provisions:
 

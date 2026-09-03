@@ -6,6 +6,11 @@
 # (secrets, and values only known after the Vercel/R2 side exists - see
 # README.md's deployment section).
 #
+# Lives at the repo root (not backend/) on purpose: Render auto-detects a
+# Blueprint at the repository root, and dockerfilePath/dockerContext below
+# are resolved relative to wherever this file sits - keeping it here, with
+# root-relative paths into backend/, avoids that ambiguity entirely.
+#
 # No preDeployCommand here: that feature requires a paid plan. Migrations
 # instead run as part of the Docker image's own start command (see
 # backend/Dockerfile) - safe to run on every start since it's a no-op once
@@ -18,7 +23,7 @@ databases:
 services:
   - type: web
     name: survey-app-backend
-    env: docker
+    runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     plan: free
