@@ -13,6 +13,19 @@ frontend/   React + TypeScript + Vite PWA, Tailwind v4 + daisyUI
 
 ---
 
+## Live deployment
+
+- **App**: https://survey-app-ten-phi.vercel.app/
+- **Backend API**: https://survey-app-backend-opir.onrender.com
+
+This is the fastest way to review the app — no local setup needed, just
+open the app URL and log in. See "Deployment" below for how this is hosted
+and how to redeploy it. Note the backend is on Render's free tier: if it's
+been idle a while and the uptime monitor (see "Keeping it awake" below)
+isn't running, the first request can take 30-50 seconds to wake it up.
+
+---
+
 ## Prerequisites
 
 - **Python 3.13+** and **PostgreSQL with the PostGIS extension** installed locally
@@ -69,6 +82,12 @@ a production bundle with `npm run build` (only the production build via
 does not).
 
 ## Handing off / sharing a database backup
+
+If someone just needs to *look at* the app, send them the "Live deployment"
+link above instead — nothing below in this section is necessary for that,
+it's only for when someone needs to actually run the project locally (e.g.
+a teammate developing further) and local Postgres data needs to travel with
+them.
 
 `backend/media/` (survey photos) is gitignored on purpose — user-uploaded
 binary content doesn't belong in git. That means **a database backup alone
