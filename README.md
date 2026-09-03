@@ -146,10 +146,13 @@ After it provisions:
      to this after step 3, since it isn't known until then
    - `AWS_STORAGE_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
      `AWS_S3_ENDPOINT_URL`, `AWS_S3_CUSTOM_DOMAIN` — from step 1
-3. Migrations run automatically on every container start (baked into
-   `backend/Dockerfile`'s start command, not a Render "pre-deploy command" —
-   that feature needs a paid plan). Create the admin login once, via Render's
-   shell: `python manage.py createsuperuser`
+   - `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_EMAIL`,
+     `DJANGO_SUPERUSER_PASSWORD` — your chosen admin login (see next point)
+3. Migrations, and superuser creation, both run automatically on every
+   container start (baked into `backend/Dockerfile`'s start command, not a
+   Render "pre-deploy command" or the Shell tab — neither is available on
+   the free plan). Superuser creation is idempotent (`|| true`), so it's
+   harmless that it re-runs on every restart.
 
 ### 3. Vercel (frontend)
 

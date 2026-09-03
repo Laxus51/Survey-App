@@ -57,3 +57,13 @@ services:
         sync: false
       - key: AWS_S3_CUSTOM_DOMAIN
         sync: false
+      # Free-tier Render has no Shell access to run `createsuperuser`
+      # interactively, so backend/Dockerfile's start command runs it
+      # non-interactively instead, reading these three (Django's own
+      # env-var convention for createsuperuser --noinput).
+      - key: DJANGO_SUPERUSER_USERNAME
+        sync: false
+      - key: DJANGO_SUPERUSER_EMAIL
+        sync: false
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
