@@ -147,9 +147,10 @@ After it provisions:
      to this after step 3, since it isn't known until then
    - `AWS_STORAGE_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
      `AWS_S3_ENDPOINT_URL`, `AWS_S3_CUSTOM_DOMAIN` — from step 1
-3. Migrations run automatically on every deploy (`preDeployCommand` in
-   `render.yaml`). Create the admin login once, via Render's shell:
-   `python manage.py createsuperuser`
+3. Migrations run automatically on every container start (baked into
+   `backend/Dockerfile`'s start command, not a Render "pre-deploy command" —
+   that feature needs a paid plan). Create the admin login once, via Render's
+   shell: `python manage.py createsuperuser`
 
 ### 3. Vercel (frontend)
 

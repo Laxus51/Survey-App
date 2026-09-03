@@ -24,4 +24,9 @@ RUN python manage.py collectstatic --noinput
 
 # Render injects the actual port to bind via $PORT at container start - it's
 # not known at build time, so this can't be a fixed EXPOSE/--bind value.
-CMD gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
+#
+# Migrations run here, not as a Render "pre-deploy command" - that feature
+# requires a paid plan. Running migrate on every container start (every
+# deploy, and every free-tier sleep/wake cycle) is safe: it's a no-op when
+# there's nothing new to apply.
+CMD python manage.py migrate && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT

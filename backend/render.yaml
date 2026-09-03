@@ -5,6 +5,11 @@
 # `sync: false` below need real values filled in via Render's dashboard
 # (secrets, and values only known after the Vercel/R2 side exists - see
 # README.md's deployment section).
+#
+# No preDeployCommand here: that feature requires a paid plan. Migrations
+# instead run as part of the Docker image's own start command (see
+# backend/Dockerfile) - safe to run on every start since it's a no-op once
+# there's nothing new to migrate.
 databases:
   - name: survey-app-db
     databaseName: survey_app
@@ -17,7 +22,6 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     plan: free
-    preDeployCommand: python manage.py migrate
     envVars:
       - key: DATABASE_URL
         fromDatabase:
